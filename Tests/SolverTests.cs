@@ -93,8 +93,7 @@ public sealed class SolverTests
                         Name = "simple dev task3",
                         Limit = new TaskLimitDto
                         {
-                            Duration = 3,
-                            //TShirt = TShirtType.L,
+                            TShirt = TShirtType.S,
                             ResourceRole = "dev"
                         }
                     },
@@ -123,25 +122,25 @@ public sealed class SolverTests
                 {
                     Role = "dev",
                     Name = "doe",
-                    // Calendar = new CalendarDto
-                    // {
-                    //     WorkingDays = new List<CalendarPeriod>
-                    //     {
-                    //         new()
-                    //         {
-                    //             From = new DateOnly(2026, 01, 03),
-                    //             To = new DateOnly(2026, 01, 04)
-                    //         }
-                    //     },
-                    //     NonWorkingDays = new List<CalendarPeriod>
-                    //     {
-                    //         new()
-                    //         {
-                    //             From =  new DateOnly(2026, 01, 05),
-                    //             To =  new DateOnly(2026, 01, 05)
-                    //         }
-                    //     }
-                    // }
+                    Calendar = new CalendarDto
+                    {
+                        WorkingDays = new List<CalendarPeriod>
+                        {
+                            new()
+                            {
+                                From = new DateOnly(2026, 01, 03),
+                                To = new DateOnly(2026, 01, 04)
+                            }
+                        },
+                        NonWorkingDays = new List<CalendarPeriod>
+                        {
+                            new()
+                            {
+                                From = new DateOnly(2026, 01, 05),
+                                To =  new DateOnly(2026, 01, 05)
+                            }
+                        }
+                    }
                 }
             }
         };
@@ -157,14 +156,91 @@ public sealed class SolverTests
         Assert.That(tasks[0].Plan!.ResourceName, Is.EqualTo(expectedResource1));
         Assert.That(tasks[0].Plan!.PlannedStart, Is.EqualTo(new  DateOnly(2026, 01, 15)));
         Assert.That(tasks[0].Plan!.PlannedFinish, Is.EqualTo(new  DateOnly(2026, 01, 23)));
+        Assert.IsNotNull(tasks[0].Fact);
+        Assert.That(tasks[0].Fact.IsProgress, Is.True);
+        Assert.That(tasks[0].Fact.IsFinished, Is.False);
+        Assert.That(tasks[0].Fact.StartDate, Is.EqualTo(tasks[0].Plan!.PlannedStart));
+        Assert.That(tasks[0].Fact.FinishDate, Is.Null);
+        Assert.That(tasks[0].Fact.Records.Count, Is.EqualTo(1));
+        Assert.That(tasks[0].Fact.Records[0].RecordedAt, Is.EqualTo(tasks[0].Plan!.PlannedStart));
+        Assert.That(tasks[0].Fact.Records[0].Duration, Is.EqualTo(tasks[0].Limit!.TShirt!.Value.ToDays()));
+        Assert.That(tasks[0].Fact.Records[0].ResourceName, Is.EqualTo(expectedResource1));
+        Assert.That(tasks[0].Fact.Records[0].Type, Is.EqualTo(TaskFactRecordType.Started));
         
         Assert.That(tasks[1].Plan!.ResourceName, Is.EqualTo(expectedResource1));
-        Assert.That(tasks[1].Plan!.PlannedStart, Is.EqualTo(new  DateOnly(2026, 01, 24)));
-        Assert.That(tasks[1].Plan!.PlannedFinish, Is.EqualTo(new  DateOnly(2026, 01, 28)));
+        Assert.That(tasks[1].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 24)));
+        Assert.That(tasks[1].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 28)));
+        Assert.IsNotNull(tasks[1].Fact);
+        Assert.That(tasks[1].Fact.IsProgress, Is.True);
+        Assert.That(tasks[1].Fact.IsFinished, Is.False);
+        Assert.That(tasks[1].Fact.StartDate, Is.EqualTo(tasks[1].Plan!.PlannedStart));
+        Assert.That(tasks[1].Fact.FinishDate, Is.Null);
+        Assert.That(tasks[1].Fact.Records.Count, Is.EqualTo(1));
+        Assert.That(tasks[1].Fact.Records[0].RecordedAt, Is.EqualTo(tasks[1].Plan!.PlannedStart));
+        Assert.That(tasks[1].Fact.Records[0].Duration, Is.EqualTo(tasks[1].Limit!.TShirt!.Value.ToDays()));
+        Assert.That(tasks[1].Fact.Records[0].ResourceName, Is.EqualTo(expectedResource1));
+        Assert.That(tasks[1].Fact.Records[0].Type, Is.EqualTo(TaskFactRecordType.Started));
         
         Assert.That(tasks[2].Plan!.ResourceName, Is.EqualTo(expectedResource2));
-        Assert.That(tasks[2].Plan!.PlannedStart, Is.EqualTo(new  DateOnly(2026, 01, 1)));
-        Assert.That(tasks[2].Plan!.PlannedFinish, Is.EqualTo(new  DateOnly(2026, 01, 20)));
+        Assert.That(tasks[2].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 1)));
+        Assert.That(tasks[2].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 5)));
+    }
+
+    [Test]
+    public void CalendarTest()
+    {
+        _project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 1),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "simple task",
+                Limit = new TaskLimitDto
+                {
+                    TShirt = TShirtType.S,
+                    ResourceRole = "dev",
+                }
+            },
+            Resources = new List<ResourceDto>
+            {
+                new()
+                {
+                    Role = "dev",
+                    Name = "john",
+                    AvailFrom = new DateOnly(2026, 1, 15),
+                    Calendar = new CalendarDto
+                    {
+                        WorkingDays = new List<CalendarPeriod>
+                        {
+                            new()
+                            {
+                                From = new DateOnly(2026, 01, 17),
+                                To = new DateOnly(2026, 01, 18)
+                            }
+                        },
+                        NonWorkingDays = new List<CalendarPeriod>
+                        {
+                            new()
+                            {
+                                From = new DateOnly(2026, 01, 16),
+                                To = new DateOnly(2026, 01, 16)
+                            }
+                        }
+                    }
+                }
+            }
+        };
         
+        var solved = _solver.Solve(_project);
+        Assert.IsTrue(solved);
+        
+        var plan = _project.RootTask.Plan;
+        
+        Assert.IsNotNull(plan);
+        
+        Assert.That(plan!.ResourceName, Is.EqualTo(_project.Resources.First().Name));
+        Assert.That(plan.PlannedStart, Is.EqualTo(new  DateOnly(2026, 01, 15)));
+        Assert.That(plan.PlannedFinish, Is.EqualTo(new  DateOnly(2026, 01, 18)));
     }
 }
