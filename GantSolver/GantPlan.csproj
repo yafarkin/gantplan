@@ -1,0 +1,50 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <RootNamespace>GantPlan</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Google.OrTools" Version="9.14.6206"/>
+        <PackageReference Include="Mapster" Version="7.4.0" />
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Compile Update="Dtos\ResourceDto.cs">
+            <DependentUpon>ProjectDto.cs</DependentUpon>
+        </Compile>
+        <Compile Update="Dtos\TaskDto.cs">
+            <DependentUpon>ProjectDto.cs</DependentUpon>
+        </Compile>
+        <Compile Update="Dtos\CalendarPeriod.cs">
+            <DependentUpon>CalendarDto.cs</DependentUpon>
+        </Compile>
+        <Compile Update="Dtos\TaskLimitDto.cs">
+            <DependentUpon>TaskDto.cs</DependentUpon>
+        </Compile>
+        <Compile Update="Dtos\TaskPlanDto.cs">
+            <DependentUpon>TaskDto.cs</DependentUpon>
+        </Compile>
+        <Compile Update="Dtos\TaskFactDto.cs">
+            <DependentUpon>TaskDto.cs</DependentUpon>
+        </Compile>
+        <Compile Update="Dtos\TaskFactRecordDto.cs">
+          <DependentUpon>TaskFactDto.cs</DependentUpon>
+        </Compile>
+        <Compile Update="Dtos\TaskFactRecordType.cs">
+          <DependentUpon>TaskFactRecordDto.cs</DependentUpon>
+        </Compile>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Remove="Templates\timeline_template.html"/>
+        <Content Include="Templates\timeline_template.html">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
+    </ItemGroup>
+
+</Project>

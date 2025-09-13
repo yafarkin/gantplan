@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Timeline занятости</title>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <style>
+        /* ===== LAYOUT / BASICS ===== */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background: #f8f9fa;
+            color: #343a40;
+        }
+
+        h2 {
+            margin-bottom: 15px;
+        }
+
+        /* ===== CONTROLS ===== */
+        .controls {
+            margin-bottom: 10px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .controls button, .controls input, .controls label {
+            padding: 6px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            background: #fff;
+        }
+
+        .controls button {
+            background: #007bff;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .controls button:hover {
+            background: #0056b3;
+        }
+
+        /* ===== TABLE CONTAINER ===== */
+        #table-container {
+            overflow: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            background: #fff;
+            max-height: 70vh;
+        }
+
+        table {
+            border-collapse: separate;
+            border-spacing: 0;
+            width: 100%;
+            min-width: 700px;
+            font-size: 13px;
+        }
+
+        /* ===== CELLS / HEAD ===== */
+        th, td {
+            border: 1px solid #dee2e6;
+            padding: 6px 8px;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        thead th {
+            background: #343a40;
+            color: #fff;
+            position: sticky;
+            top: 0;
+            z-index: 5;
+        }
+
+        /* sticky assignee column  */
+        tbody td.assignee-cell {
+            position: sticky;
+            left: 0;
+            z-index: 6;
+            background: #343a40;
+            color: #fff;
+            font-weight: 600;
+        }
+
+        /* zebra & hover */
+        tbody tr:nth-child(even) {
+            background: #f1f3f5;
+        }
+
+        tbody tr:hover {
+            background: #e9ecef;
+        }
+
+        /* day type backgrounds */
+        .weekend {
+            background: #e9ecef;
+        }
+
+        .non-working {
+            background: #d8d8d8;
+        }
+
+        .resource-non-working {
+            background: #bfbfbf;
+        }
+
+        /* ===== SEGMENT CELLS ===== */
+        .segment-cell {
+            padding: 4px 6px;
+            font-size: 12px;
+            white-space: normal;
+            line-height: 1.25;
+            border-radius: 4px;
+            color: #fff;
+            position: relative;
+        }
+
+        /* highlight on hover */
+        .segment-cell.highlight {
+            outline: 2px solid #333;
+            outline-offset: -2px;
+        }
+
+        /* non‑working segment visual tweak: lower opacity + diagonal hatch */
+        .segment-nonwork {
+            opacity: .55;
+        }
+
+        .segment-nonwork::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, .6) 0 4px, transparent 4px 8px);
+            border-radius: 4px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+<h2>Timeline занятости</h2>
+<div class="controls">
+    <input id="assignee-filter" placeholder="Filter by Assignee">
+    <input id="taskkey-filter" placeholder="Filter by Task Key or Name">
+    <label><input id="filter-or" type="checkbox"> Use OR filter</label>
+    <button id="zoom-out">Zoom Out</button>
+    <button id="zoom-in">Zoom In</button>
+    <button id="clear-filters">Clear Filters</button>
+</div>
+<div id="table-container"></div>
+
+<script>
+    /* -------------------- placeholders replaced  --------------------------------- */
+    const rawData = {{PersonActivitiesData}}
+    const globalNonWorking = {{global_non_working}}
+    const resourceNonWorking = {{resource_non_working}}
+    /* ----------------------------------------------------------------------------- */
+
+    /* ===== HELPERS ===== */
+    function parseDateLocal(str) {
+        const [y, m, d] = str.split('-').map(Number);
+        return new Date(y, m - 1, d);
+    } // local TZ
+    function ymdLocal(d) {
+        return d.toLocaleDateString('sv-SE');
+    } // YYYY-MM-DD
+    const fmtDate = d3.timeFormat('%Y-%m-%d');
+
+    function isWeekend(d) {
+        return d.getDay() === 0 || d.getDay() === 6;
+    }
+
+    function isGlobalHoliday(d) {
+        return (globalNonWorking || []).includes(ymdLocal(d));
+    }
+
+    function isResourceHoliday(d, assignee) {
+        return (resourceNonWorking[assignee] || []).includes(ymdLocal(d));
+    }
+
+    function isNonWork(d, assignee) {
+        return isWeekend(d) || isGlobalHoliday(d) || isResourceHoliday(d, assignee);
+    }
+
+    /* ===== PREPROCESS ===== */
+    rawData.forEach(p => p.Activities.forEach(a => {
+        a._start = parseDateLocal(a.Start);
+        a._rawEnd = a.End ? parseDateLocal(a.End) : a._start;
+        a._end = d3.timeDay.offset(a._rawEnd, 1); // exclusive end
+        // derive color key for consistent colour across subtasks of same epics
+        const parts = a.TaskKey.split('.');
+        a.colorKey = parts.length > 1 ? parts.slice(0, 2).join('.') : a.TaskKey;
+    }));
+    const colorScale = d3.scaleOrdinal(d3.schemeCategory10)
+        .domain(Array.from(new Set(rawData.flatMap(p => p.Activities.map(a => a.colorKey)))));
+
+    /* ===== DATE RANGE & ZOOM STEPS ===== */
+    const allDates = rawData.flatMap(p => p.Activities.flatMap(a => [a._start, a._rawEnd]));
+    const minDate = d3.min(allDates), maxDate = d3.max(allDates);
+    const granularities = ['day', '3day', 'week', '2week'];
+    let granIdx = 0;
+
+    /* ===== CONTROLS ===== */
+    d3.select('#zoom-in').on('click', () => {
+        if (granIdx > 0) {
+            granIdx--;
+            render();
+        }
+    });
+    d3.select('#zoom-out').on('click', () => {
+        if (granIdx < granularities.length - 1) {
+            granIdx++;
+            render();
+        }
+    });
+    d3.select('#assignee-filter').on('input', render);
+    d3.select('#taskkey-filter').on('input', render);
+    d3.select('#filter-or').on('change', render);
+    d3.select('#clear-filters').on('click', () => {
+        d3.select('#assignee-filter').property('value', '');
+        d3.select('#taskkey-filter').property('value', '');
+        d3.select('#filter-or').property('checked', false);
+        render();
+    });
+
+    /* ===== INITIAL RENDER ===== */
+    render();
+
+    /* ========================================================================== */
+    function render() {
+        /* --- FILTER DATA --- */
+        const assF = d3.select('#assignee-filter').property('value').toLowerCase();
+        const taskF = d3.select('#taskkey-filter').property('value').toLowerCase();
+        const orMode = d3.select('#filter-or').property('checked');
+
+        let persons = rawData.filter(p => {
+            const mAss = assF && p.Assignee.toLowerCase().includes(assF);
+            const mTask = taskF && p.Activities.some(a => a.TaskKey.toLowerCase().includes(taskF) || a.FullName.toLowerCase().includes(taskF));
+            if (assF && taskF) return orMode ? (mAss || mTask) : (mAss && mTask);
+            if (assF) return mAss;
+            if (taskF) return mTask;
+            return true;
+        }).map(p => {
+            let acts = p.Activities;
+            if (taskF) acts = acts.filter(a => a.TaskKey.toLowerCase().includes(taskF) || a.FullName.toLowerCase().includes(taskF));
+            return {...p, Activities: acts};
+        }).filter(p => p.Activities.length);
+
+        /* --- TIME BINS BY GRANULARITY --- */
+        const gran = granularities[granIdx];
+        let bins, nextBin;
+        switch (gran) {
+            case'3day':
+                bins = d3.timeDay.every(3).range(minDate, d3.timeDay.offset(maxDate, 1));
+                nextBin = d => d3.timeDay.offset(d, 3);
+                break;
+            case'week':
+                bins = d3.timeWeek.range(minDate, d3.timeWeek.offset(maxDate, 1));
+                nextBin = d => d3.timeWeek.offset(d, 1);
+                break;
+            case'2week':
+                bins = d3.timeWeek.every(2).range(minDate, d3.timeWeek.offset(maxDate, 1));
+                nextBin = d => d3.timeWeek.offset(d, 2);
+                break;
+            default:
+                bins = d3.timeDay.range(minDate, d3.timeDay.offset(maxDate, 1));
+                nextBin = d => d3.timeDay.offset(d, 1);
+        }
+
+        /* --- RESET CONTAINER --- */
+        const container = d3.select('#table-container').html('');
+        const table = container.append('table');
+
+        /* --- HEADER ROW --- */
+        const thead = table.append('thead').append('tr');
+        thead.append('th').text('Исполнитель');
+        bins.forEach(b => {
+            thead.append('th')
+                .classed('weekend', isWeekend(b))
+                .classed('non-working', isGlobalHoliday(b))
+                .text(fmtDate(b));
+        });
+
+        const tbody = table.append('tbody');
+
+        /* --- PER PERSON / LANES --- */
+        persons.forEach(person => {
+            /* pack tasks into lanes (no overlaps in lane) */
+            const items = person.Activities.slice().sort((a, b) => a._start - b._start);
+            const lanes = [];
+            items.forEach(act => {
+                let placed = false;
+                for (const lane of lanes) {
+                    const last = lane[lane.length - 1];
+                    if (act._start >= last._end) {
+                        lane.push(act);
+                        placed = true;
+                        break;
+                    }
+                }
+                if (!placed) lanes.push([act]);
+            });
+
+            /* draw each lane (row) */
+            lanes.forEach((lane, laneIdx) => {
+                const row = tbody.append('tr');
+                if (laneIdx === 0) {
+                    row.append('td')
+                        .classed('assignee-cell', true)
+                        .attr('rowspan', lanes.length)
+                        .text(person.Assignee);
+                }
+
+                let i = 0, itemIdx = 0;
+                while (i < bins.length) {
+                    // skip finished activities
+                    while (itemIdx < lane.length && bins[i] >= lane[itemIdx]._end) itemIdx++;
+                    const curr = itemIdx < lane.length ? lane[itemIdx] : null;
+
+                    if (curr && curr._start < nextBin(bins[i]) && curr._end > bins[i]) {
+                        const initialNonWork = isNonWork(bins[i], person.Assignee);
+                        let span = 1;
+                        // extend span while same nonWork flag + activity overlap
+                        while (i + span < bins.length &&
+                        curr._start < nextBin(bins[i + span]) && curr._end > bins[i + span] &&
+                        isNonWork(bins[i + span], person.Assignee) === initialNonWork) {
+                            span++;
+                        }
+                        // create cell
+                        const cell = row.append('td')
+                            .attr('colspan', span)
+                            .attr('class', 'segment-cell' + (initialNonWork ? ' segment-nonwork' : ''))
+                            .style('background', colorScale(curr.colorKey));
+                        const label = curr.FullName.length > 80 ? curr.FullName.slice(0, 80) + '…' : curr.FullName;
+                        cell.text(label);
+                        cell.attr('title', `${curr.FullName}\n${fmtDate(curr._start)} → ${fmtDate(curr._rawEnd)}`);
+                        cell.on('mouseover', () => cell.classed('highlight', true))
+                            .on('mouseout', () => cell.classed('highlight', false))
+                            .on('dblclick', () => {
+                                const inp = d3.select('#taskkey-filter');
+                                const cur = inp.property('value').toLowerCase();
+                                inp.property('value', cur === curr.TaskKey?.toLowerCase() ? '' : curr.TaskKey);
+                                render();
+                            });
+                        i += span;
+                    } else {
+                        const dateStr = ymdLocal(bins[i]);
+                        const td = row.append('td');
+                        if (isGlobalHoliday(bins[i])) td.classed('non-working', true);
+                        else if (isResourceHoliday(bins[i], person.Assignee)) td.classed('resource-non-working', true);
+                        else if (isWeekend(bins[i])) td.classed('weekend', true);
+                        i++;
+                    }
+                }
+            });
+        });
+    }
+</script>
+</body>
+</html>

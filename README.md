@@ -1,1 +1,1 @@
-# ganttplan
+# gantplan

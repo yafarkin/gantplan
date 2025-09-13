@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GantPlan", "GantSolver\GantPlan.csproj", "{7D6FE9A1-77F5-48CA-B70D-B9F18569650C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Planner", "Planner\Planner.csproj", "{C8A93EA9-224F-4DF6-B14D-3E9BCAA2D1BC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7D6FE9A1-77F5-48CA-B70D-B9F18569650C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7D6FE9A1-77F5-48CA-B70D-B9F18569650C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7D6FE9A1-77F5-48CA-B70D-B9F18569650C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7D6FE9A1-77F5-48CA-B70D-B9F18569650C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C8A93EA9-224F-4DF6-B14D-3E9BCAA2D1BC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C8A93EA9-224F-4DF6-B14D-3E9BCAA2D1BC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C8A93EA9-224F-4DF6-B14D-3E9BCAA2D1BC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C8A93EA9-224F-4DF6-B14D-3E9BCAA2D1BC}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
