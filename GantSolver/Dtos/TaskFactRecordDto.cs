@@ -6,10 +6,10 @@ namespace GantPlan.Dtos;
 public sealed record TaskFactRecordDto
 {
     /// <summary>
-    /// Дата записи. Значение зависит от типа <see cref="TaskFactRecordType"/>
-    /// Started - работа началась в эту дату.
-    /// Completed/Cancelled - завершилась
-    /// InProgress - дата среза на эту запись, т.е работа идёт
+    /// Record date. The value depends on the type of <see cref="TaskFactRecordType"/>.
+    /// * Started – work started at this date.
+    /// * Completed/Cancelled – work finished at this date.
+    /// * InProgress – snapshot date for this record, i.e., work is ongoing.
     /// </summary>
     public DateOnly RecordedAt { get; set; }
     
@@ -19,8 +19,8 @@ public sealed record TaskFactRecordDto
     public string? ResourceName { get; set; }
     
     /// <summary>
-    /// Длительность. Абсолютное новое значение.
-    /// Показывает, сколько требуется ещё ч/д для завершения задачи
+    /// Duration. Absolute new value.
+    /// Indicates how many hours/days are still required to complete the task.
     /// </summary>
     public int? Duration { get; set; }
     

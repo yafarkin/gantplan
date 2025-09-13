@@ -4,6 +4,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GantPlan", "GantSolver\Gant
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Planner", "Planner\Planner.csproj", "{C8A93EA9-224F-4DF6-B14D-3E9BCAA2D1BC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests", "Tests\Tests.csproj", "{0C97EB40-1EEA-4F50-83B3-3160993E6FD0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{C8A93EA9-224F-4DF6-B14D-3E9BCAA2D1BC}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C8A93EA9-224F-4DF6-B14D-3E9BCAA2D1BC}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C8A93EA9-224F-4DF6-B14D-3E9BCAA2D1BC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0C97EB40-1EEA-4F50-83B3-3160993E6FD0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0C97EB40-1EEA-4F50-83B3-3160993E6FD0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0C97EB40-1EEA-4F50-83B3-3160993E6FD0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0C97EB40-1EEA-4F50-83B3-3160993E6FD0}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

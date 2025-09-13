@@ -5,27 +5,27 @@ public enum TShirtType
     None = 0,
     
     /// <summary>
-    /// 1 день
+    /// 1 day
     /// </summary>
     XS,
     
     /// <summary>
-    /// 2...3 дня
+    /// 2...3 days
     /// </summary>
     S,
     
     /// <summary>
-    /// 4...7 дней
+    /// 4...7 days
     /// </summary>
     M,
     
     /// <summary>
-    /// 8...15 дней
+    /// 8...15 days
     /// </summary>
     L,
     
     /// <summary>
-    /// 15+ дней
+    /// 15+ days
     /// </summary>
     XL
 }

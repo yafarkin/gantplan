@@ -7,11 +7,13 @@ public sealed class TaskAlignment
 {
     public readonly Dictionary<string, TaskDto> OriginalTasks = new();
     public readonly Dictionary<string, TaskDto> FlattenTasksCopy = new();
+    public readonly Dictionary<string, TaskDto> FlattenTasksToSolve = new();
     
     public void Alignment(ProjectDto project, Dictionary<int, long> weights)
     {
         OriginalTasks.Clear();
         FlattenTasksCopy.Clear();
+        FlattenTasksToSolve.Clear();
         
         ValidateAndFill(project, weights);
     }
@@ -22,10 +24,15 @@ public sealed class TaskAlignment
         {
             throw new Exception("Fact date should be great or equal that project date");
         }
+
+        if (project.RootTask is null)
+        {
+            throw new Exception("Root task cannot be null");
+        }
         
         ValidateAndFill(project.RootTask, weights);
         
-        if (FlattenTasksCopy.Count == 0)
+        if (FlattenTasksToSolve.Count == 0)
         {
             throw new Exception("No tasks found");
         }
@@ -68,6 +75,11 @@ public sealed class TaskAlignment
         var taskCopy = task.Adapt<TaskDto>();
         
         FlattenTasksCopy.Add(task.Id, taskCopy);
+
+        if (!taskCopy.CanSkipTask)
+        {
+            FlattenTasksToSolve.Add(task.Id, taskCopy);
+        }
     }
     
     private void PostFill(TaskDto task, IList<TaskDto> parentTasks)

@@ -42,7 +42,7 @@ public sealed class Solver
         PrepareSolverConstraints();
         
         var makespan = _model.NewIntVar(0, Horizon, "makespan");
-        _model.AddMaxEquality(makespan, _taskAlignment.FlattenTasksCopy.Where(x => !x.Value.CanSkipTask).Select(t => _ends[t.Key]).ToArray());
+        _model.AddMaxEquality(makespan, _taskAlignment.FlattenTasksToSolve.Select(t => _ends[t.Key]).ToArray());
         _model.Minimize(makespan + LinearExpr.Sum(_priorityObjectives));
         //model.Minimize(makespan);
 
@@ -215,16 +215,11 @@ public sealed class Solver
 
     private void CreateTasksIntervals()
     {
-        foreach (var taskKv in _taskAlignment.FlattenTasksCopy)
+        foreach (var taskKv in _taskAlignment.FlattenTasksToSolve)
         {
             var taskKey = taskKv.Key;
             var task = taskKv.Value;
 
-            if (task.CanSkipTask)
-            {
-                continue;
-            }
-            
             var resources = FindResourcesForTask(task);
 
             var useList = new HashSet<BoolVar>();
@@ -358,13 +353,9 @@ public sealed class Solver
 
     private void CreateDependencyBetweenTasks()
     {
-        foreach (var taskKv in _taskAlignment.FlattenTasksCopy)
+        foreach (var taskKv in _taskAlignment.FlattenTasksToSolve)
         {
             var task = taskKv.Value;
-            if (task.CanSkipTask)
-            {
-                continue;
-            }
 
             foreach (var predecessorId in task.Limit!.PredecessorIds)
             {
@@ -386,13 +377,9 @@ public sealed class Solver
         _ends.Clear();
         _priorityObjectives.Clear();
         
-        foreach (var taskKv in _taskAlignment.FlattenTasksCopy)
+        foreach (var taskKv in _taskAlignment.FlattenTasksToSolve)
         {
             var task = taskKv.Value;
-            if (task.CanSkipTask)
-            {
-                continue;
-            }
             
             var startIntVar = _model.NewIntVar(0, Horizon, $"start_{task.Id}");
             var endIntVar = _model.NewIntVar(0, Horizon, $"end_{task.Id}");

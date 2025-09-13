@@ -10,7 +10,6 @@ public static class DemoProject
         var project = new ProjectDto
         {
             ProjectStart = new DateOnly(2026, 1, 1),
-            FactDate = new DateOnly(2026, 1, 1),
             RootTask = new TaskDto
             {
                 Id = "1",

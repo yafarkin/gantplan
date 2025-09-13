@@ -7,39 +7,44 @@ namespace GantPlan.Dtos;
 public sealed record TaskLimitDto
 {
     /// <summary>
-    /// Приоритет работ, чем меньше значение, тем раньше по графику.
+    /// Work priority – the smaller the number, the sooner it appears on the schedule.
     /// </summary>
     public int? Priority { get; set; }
 
     /// <summary>
-    /// Длительность работ, в ч/д. Должно быть задано или это поле, или размер майки <see cref="TShirt"/>
+    /// Work duration in days.
+    /// Either this field **or** the <see cref="TShirt"/> size must be specified.
     /// </summary>
     public int? Duration { get; init; }
     
     /// <summary>
-    /// Опциональное буфферное время в ч/д. Просто складывается, позднее будет рисоваться на графике.
-    /// По факту, отражает нашу неуверенность в оценке.
+    /// Optional buffer time in person‑days.
+    /// It’s simply added to the schedule and will be visualised on the chart later.
+    /// Essentially it represents our uncertainty about the estimate.
     /// </summary>
     public int? Buffer { get; init; }
 
     /// <summary>
-    /// Роль, которая может выполнить работу. Задано должно быть или это поле, или <see cref="ResourceName"/>.
+    /// The role capable of performing the task.
+    /// Either this field **or** <see cref="ResourceName"/> must be specified.
     /// </summary>
     public string? ResourceRole { get; init; }
 
     /// <summary>
-    /// Конкретный исполнитель работы, если мы его знаем. Или это поле, или <see cref="ResourceRole"/>.
+    /// The specific assignee for the task, if known.
+    /// Either this field **or** <see cref="ResourceRole"/> must be specified.
     /// </summary>
     public string? ResourceName { get; init; }
     
     /// <summary>
-    /// Размер майки. Надо при планировании работ ориентироваться на это поле. Должно быть задано или это поле, или <see cref="Duration"/>
+    /// T‑shirt size – the metric to use when estimating work.
+    /// Either this field **or** <see cref="Duration"/> must be specified.
     /// </summary>
     [JsonConverter(typeof(StringEnumConverter))]
     public TShirtType? TShirt { get; init; }
 
     /// <summary>
-    /// Опционально, список ключей тех задач, которые должны быть выполнены до старта этой задачи.
+    /// (Optional) List of keys for tasks that must finish before this one can start.
     /// </summary>
     public ICollection<string> PredecessorIds { get; set; } = [];
 }
