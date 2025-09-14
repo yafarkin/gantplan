@@ -10,7 +10,8 @@
   <component name="ChangeListManager">
     <list default="true" id="f2fd0f2c-732b-41ee-8588-cbf1b7e2de9e" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.GantPlan/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.GantPlan/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GantPlan.sln" beforeDir="false" afterPath="$PROJECT_DIR$/GantPlan.sln" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ConsoleApp1/Program.cs" beforeDir="false" afterPath="$PROJECT_DIR$/ConsoleApp1/Program.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GantSolver/Logic/Solver.cs" beforeDir="false" afterPath="$PROJECT_DIR$/GantSolver/Logic/Solver.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Tests/SolverTests.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Tests/SolverTests.cs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -42,6 +43,8 @@
     <setting file="file://$PROJECT_DIR$/Tests/SolverTests.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/SourcesCache/46a322d26154b982566e1817203e5452c91223f93b0e392d9c5b4806696fdc1/Assert.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/SourcesCache/48c3d3e27a3992b5816511af754196140ae50726131f3e6f6bdbf4a339e8364/Assert.Exceptions.cs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/SourcesCache/6780d13016c376c4491c5618b257d84da7eacf747ed2719783e775546b79b/ThrowHelper.cs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/SourcesCache/8c9332bc207345dc19ba8c0e3b5ae32c091b3b1e51eedb3cb719a795d5dc8e5/IntegerExpressions.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/SourcesCache/9ec14bf1a6ca9b18c9e62147b1cadf0959b3acbfc5c8c2b9d5c6fa12030/StringEnumConverter.cs" root0="FORCE_HIGHLIGHTING" />
   </component>
   <component name="KubernetesApiPersistence">{}</component>
@@ -82,7 +85,7 @@
     &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
 }</component>
-  <component name="RunManager" selected=".NET Project.ConsoleApp1">
+  <component name="RunManager" selected=".NET Project.Planner">
     <configuration name="ConsoleApp1" type="DotNetProject" factoryName=".NET Project">
       <option name="EXE_PATH" value="" />
       <option name="PROGRAM_PARAMETERS" value="" />
@@ -142,6 +145,9 @@
       <workItem from="1757753809383" duration="27000" />
       <workItem from="1757753896446" duration="10196000" />
       <workItem from="1757773719205" duration="941000" />
+      <workItem from="1757790003598" duration="30000" />
+      <workItem from="1757793136303" duration="5417000" />
+      <workItem from="1757799219887" duration="3046000" />
     </task>
     <task id="LOCAL-00001" summary="Initial commit;">
       <option name="closed" value="true" />
@@ -167,11 +173,34 @@
       <option name="project" value="LOCAL" />
       <updated>1757763877147</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="debugging;">
+      <option name="closed" value="true" />
+      <created>1757790028409</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1757790028409</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="UnitTestsCoverage.Settings">
+    <option name="coveragePercentColumnWidth" value="75" />
+    <option name="sortOrder" value="DESCENDING" />
+    <option name="sortedColumn" value="1" />
+    <option name="symbolColumnWidth" value="75" />
+    <coverage-tree-state>
+      <expand>
+        <path>
+          <item name="rootNode" type="c53c71d1:RiderDotCoverCoverageTreeModel$RootNode" />
+          <item name="Total 51% 439/891" type="8b8fad3a:RiderDotCoverCoverageTreeNode" />
+        </path>
+      </expand>
+      <select />
+    </coverage-tree-state>
   </component>
   <component name="UnityCheckinConfiguration" checkUnsavedScenes="true" />
   <component name="UnityProjectConfiguration" hasMinimizedUI="false" />
@@ -179,7 +208,8 @@
     <option name="CLEAR_INITIAL_COMMIT_MESSAGE" value="true" />
     <MESSAGE value="Initial commit;" />
     <MESSAGE value="Added simple tests, but some bugs found;" />
-    <option name="LAST_COMMIT_MESSAGE" value="Added simple tests, but some bugs found;" />
+    <MESSAGE value="debugging;" />
+    <option name="LAST_COMMIT_MESSAGE" value="debugging;" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -198,29 +228,29 @@
         </breakpoint>
         <line-breakpoint enabled="true" type="DotNet Breakpoints">
           <url>file://$PROJECT_DIR$/Tests/SolverTests.cs</url>
-          <line>185</line>
-          <properties documentPath="$PROJECT_DIR$/Tests/SolverTests.cs" containingFunctionPresentation="Method 'FewTasksAndResourcesTest'">
+          <line>269</line>
+          <properties documentPath="$PROJECT_DIR$/Tests/SolverTests.cs" containingFunctionPresentation="Method 'CalendarTest'">
             <startOffsets>
-              <option value="7049" />
+              <option value="9877" />
             </startOffsets>
             <endOffsets>
-              <option value="7130" />
+              <option value="9949" />
             </endOffsets>
           </properties>
-          <option name="timeStamp" value="9" />
+          <option name="timeStamp" value="11" />
         </line-breakpoint>
         <line-breakpoint enabled="true" type="DotNet Breakpoints">
           <url>file://$PROJECT_DIR$/GantSolver/Logic/Solver.cs</url>
-          <line>228</line>
+          <line>300</line>
           <properties documentPath="$PROJECT_DIR$/GantSolver/Logic/Solver.cs" containingFunctionPresentation="Method 'CreateTasksIntervals'">
             <startOffsets>
-              <option value="7238" />
+              <option value="10411" />
             </startOffsets>
             <endOffsets>
-              <option value="7287" />
+              <option value="10455" />
             </endOffsets>
           </properties>
-          <option name="timeStamp" value="10" />
+          <option name="timeStamp" value="13" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>

@@ -6,8 +6,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Planner", "Planner\Planner.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests", "Tests\Tests.csproj", "{0C97EB40-1EEA-4F50-83B3-3160993E6FD0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsoleApp1", "ConsoleApp1\ConsoleApp1.csproj", "{7DC98913-0FCF-4DEE-9B2A-7277C4FA818A}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,9 +24,5 @@ Global
 		{0C97EB40-1EEA-4F50-83B3-3160993E6FD0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0C97EB40-1EEA-4F50-83B3-3160993E6FD0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0C97EB40-1EEA-4F50-83B3-3160993E6FD0}.Release|Any CPU.Build.0 = Release|Any CPU
-		{7DC98913-0FCF-4DEE-9B2A-7277C4FA818A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{7DC98913-0FCF-4DEE-9B2A-7277C4FA818A}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{7DC98913-0FCF-4DEE-9B2A-7277C4FA818A}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{7DC98913-0FCF-4DEE-9B2A-7277C4FA818A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

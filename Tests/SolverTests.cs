@@ -195,12 +195,29 @@ public sealed class SolverTests
             RootTask = new TaskDto
             {
                 Id = "1",
-                Name = "simple task",
-                Limit = new TaskLimitDto
-                {
-                    TShirt = TShirtType.S,
-                    ResourceRole = "dev",
-                }
+                Name = "complex task",
+                Children = [
+                    new TaskDto
+                    {
+                        Id = "2",
+                        Name = "simple task 1",
+                        Limit = new TaskLimitDto
+                        {
+                            TShirt = TShirtType.S,
+                            ResourceName = "john",
+                        }
+                    },
+                    new TaskDto
+                    {
+                        Id = "3",
+                        Name = "complex task 2",
+                        Limit = new TaskLimitDto
+                        {
+                            TShirt = TShirtType.S,
+                            ResourceName = "doe",
+                        }
+                    }
+                ]
             },
             Resources = new List<ResourceDto>
             {
@@ -208,23 +225,32 @@ public sealed class SolverTests
                 {
                     Role = "dev",
                     Name = "john",
-                    AvailFrom = new DateOnly(2026, 1, 15),
+                    AvailFrom = new DateOnly(2026, 1, 2),
                     Calendar = new CalendarDto
                     {
                         WorkingDays = new List<CalendarPeriod>
                         {
                             new()
                             {
-                                From = new DateOnly(2026, 01, 17),
-                                To = new DateOnly(2026, 01, 18)
+                                From = new DateOnly(2026, 01, 3),
+                                To = new DateOnly(2026, 01, 4)
                             }
-                        },
+                        }
+                    }
+                },
+                new()
+                {
+                    Role = "dev",
+                    Name = "doe",
+                    AvailFrom = new DateOnly(2026, 1, 3),
+                    Calendar = new CalendarDto
+                    {
                         NonWorkingDays = new List<CalendarPeriod>
                         {
                             new()
                             {
-                                From = new DateOnly(2026, 01, 16),
-                                To = new DateOnly(2026, 01, 16)
+                                From = new DateOnly(2026, 01, 6),
+                                To = new DateOnly(2026, 01, 6)
                             }
                         }
                     }
@@ -235,12 +261,18 @@ public sealed class SolverTests
         var solved = _solver.Solve(_project);
         Assert.IsTrue(solved);
         
-        var plan = _project.RootTask.Plan;
+        var resourceJohn = _project.Resources.Single(j => j.Name == "john");
+        var resourceDoe = _project.Resources.Single(j => j.Name == "doe");
         
-        Assert.IsNotNull(plan);
+        var tasks = _project.RootTask.Children.ToList();
+        Assert.That(tasks.Count, Is.EqualTo(2));
         
-        Assert.That(plan!.ResourceName, Is.EqualTo(_project.Resources.First().Name));
-        Assert.That(plan.PlannedStart, Is.EqualTo(new  DateOnly(2026, 01, 15)));
-        Assert.That(plan.PlannedFinish, Is.EqualTo(new  DateOnly(2026, 01, 18)));
+        Assert.That(tasks[0].Plan!.ResourceName, Is.EqualTo(resourceJohn.Name));
+        Assert.That(tasks[0].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 2)));
+        Assert.That(tasks[0].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 4)));
+        
+        Assert.That(tasks[1].Plan!.ResourceName, Is.EqualTo(resourceDoe.Name));
+        Assert.That(tasks[1].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 3)));
+        Assert.That(tasks[1].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 8)));
     }
 }

@@ -61,7 +61,21 @@ public sealed class Solver
         {
             PostFillAfterSolve(solver);
         }
+        
+        var proto = _model.Model;
+        var response = solver.Response!;
 
+        for (int i = 0; i < proto.Variables.Count; i++)
+        {
+            var v = proto.Variables[i];
+            var val = response.Solution[i];
+            Console.WriteLine($"{v.Name} = {val}");
+        }
+        // foreach (var c in proto.Constraints)
+        // {
+        //     Console.WriteLine(c);
+        // }
+        
         return solved;
     }
 
@@ -246,10 +260,12 @@ public sealed class Solver
 
                 var nonWorkingDays = resourceCalendar.NonWorkingDays;
                 var nonWorkingDaysCount = nonWorkingDays.Count;
-                
+
                 var dur = _model.NewIntVar(duration, duration + nonWorkingDaysCount, $"dur_nonwork_{taskKey}_{resource.Name}");
 
                 IntervalVar interval;
+                
+                BoolVar personUseVar;
             
                 // if task already in progress, we will add hard constraints
                 if (taskInProgress)
@@ -264,41 +280,44 @@ public sealed class Solver
 
                     _starts[taskKey] = _model.NewConstant(fixedStart);
                 
-                    interval = _model.NewIntervalVar(_starts[taskKey], dur, _ends[taskKey], $"fix_{taskKey}_{resource.Name}");
+                    //interval = _model.NewIntervalVar(_starts[taskKey], dur, _ends[taskKey], $"fix_{taskKey}_{resource.Name}");
+                    
+                    personUseVar = _model.NewBoolVar($"force_use_{taskKey}_{resource.Name}");
+                    _model.Add(personUseVar == 1);
+                    
+                    interval = _model.NewOptionalIntervalVar(_starts[taskKey], dur, _ends[taskKey], personUseVar, $"fix_{taskKey}_{resource.Name}");                    
                 }
                 else
                 {
-                    var personUseVar = _model.NewBoolVar($"use_{taskKey}_{resource.Name}");
-                    _personUses[(taskKey, resource.Name)] = personUseVar;
-                    useList.Add(personUseVar);
+                    personUseVar = _model.NewBoolVar($"use_{taskKey}_{resource.Name}");
                 
                     interval = _model.NewOptionalIntervalVar(_starts[taskKey], dur, _ends[taskKey], personUseVar,
                         $"opt_{taskKey}_{resource.Name}");
                 }
                 
+                _personUses[(taskKey, resource.Name)] = personUseVar;
+                useList.Add(personUseVar);
+                
                 var currentCrosses = new HashSet<BoolVar>();
-                foreach (var t in nonWorkingDays)
+                foreach (var day in nonWorkingDays)
                 {
-                    var vacS = t;
-                    var vacE = t + 1;
-
-                    var cross = _model.NewBoolVar($"cross_vac_{vacS}_{resource.Name}_{taskKey}");
-                    var beforeEnd = _model.NewBoolVar($"before_vac_end_{vacS}_{resource.Name}_{taskKey}");
-                    var afterStart = _model.NewBoolVar($"after_vac_start_{vacS}_{resource.Name}_{taskKey}");
-
-                    _model.Add(_starts[taskKey] < vacE).OnlyEnforceIf([cross, beforeEnd]);
-                    _model.Add(_starts[taskKey] >= vacE).OnlyEnforceIf([cross.Not(), beforeEnd.Not()]);
-
-                    _model.Add(_ends[taskKey] > vacS).OnlyEnforceIf([cross, afterStart]);
-                    _model.Add(_ends[taskKey] <= vacS).OnlyEnforceIf([cross.Not(), afterStart.Not()]);
-
-                    _model.AddBoolOr([cross, beforeEnd.Not(), afterStart.Not()]);
-
+                    var cross = _model.NewBoolVar($"cross_vac_{day}_{resource.Name}_{taskKey}");
+                    var beforeEnd = _model.NewBoolVar($"before_vac_end_{day}_{resource.Name}_{taskKey}");
+                    var afterStart = _model.NewBoolVar($"after_vac_start_{day}_{resource.Name}_{taskKey}");
+                
+                    _model.Add(_starts[taskKey] < day + 1).OnlyEnforceIf([cross, beforeEnd, personUseVar]);
+                    _model.Add(_starts[taskKey] >= day + 1).OnlyEnforceIf([cross.Not(), beforeEnd.Not(), personUseVar]);
+                
+                    _model.Add(_ends[taskKey] > day).OnlyEnforceIf([cross, afterStart, personUseVar]);
+                    _model.Add(_ends[taskKey] <= day).OnlyEnforceIf([cross.Not(), afterStart.Not(), personUseVar]);
+                
+                    _model.AddBoolOr([cross, beforeEnd.Not(), afterStart.Not()]).OnlyEnforceIf(personUseVar);
+                
                     currentCrosses.Add(cross);
                 }
 
-                _model.Add(dur == duration + LinearExpr.Sum(currentCrosses));
-                _model.Add(_ends[taskKey] == _starts[taskKey] + dur);
+                _model.Add(dur == duration + LinearExpr.Sum(currentCrosses)).OnlyEnforceIf(personUseVar);
+                _model.Add(_ends[taskKey] == _starts[taskKey] + dur).OnlyEnforceIf(personUseVar);
 
                 _personIntervals[resource.Name].Add(interval);
             }
