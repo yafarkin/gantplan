@@ -62,15 +62,15 @@ public sealed class Solver
             PostFillAfterSolve(solver);
         }
         
-        var proto = _model.Model;
-        var response = solver.Response!;
-
-        for (int i = 0; i < proto.Variables.Count; i++)
-        {
-            var v = proto.Variables[i];
-            var val = response.Solution[i];
-            Console.WriteLine($"{v.Name} = {val}");
-        }
+        // var proto = _model.Model;
+        // var response = solver.Response!;
+        //
+        // for (int i = 0; i < proto.Variables.Count; i++)
+        // {
+        //     var v = proto.Variables[i];
+        //     var val = response.Solution[i];
+        //     Console.WriteLine($"{v.Name} = {val}");
+        // }
         // foreach (var c in proto.Constraints)
         // {
         //     Console.WriteLine(c);
@@ -295,6 +295,7 @@ public sealed class Solver
                         $"opt_{taskKey}_{resource.Name}");
                 }
                 
+                _personIntervals[resource.Name].Add(interval);
                 _personUses[(taskKey, resource.Name)] = personUseVar;
                 useList.Add(personUseVar);
                 
@@ -318,8 +319,6 @@ public sealed class Solver
 
                 _model.Add(dur == duration + LinearExpr.Sum(currentCrosses)).OnlyEnforceIf(personUseVar);
                 _model.Add(_ends[taskKey] == _starts[taskKey] + dur).OnlyEnforceIf(personUseVar);
-
-                _personIntervals[resource.Name].Add(interval);
             }
             
             // each task can have only one resource
@@ -386,6 +385,18 @@ public sealed class Solver
                 }
 
                 _model.Add(_starts[task.Id] >= _ends[predecessorId]);
+            }
+
+            if (task.Limit.DueDate is not null)
+            {
+                var dueDate = task.Limit.DueDate.Value.DayNumber - _project.ProjectStart.DayNumber;
+                _model.Add(_ends[task.Id] <= dueDate);
+            }
+
+            if (task.Limit.StartAfter is not null)
+            {
+                var startAfter = task.Limit.StartAfter.Value.DayNumber - _project.ProjectStart.DayNumber;
+                _model.Add(_starts[task.Id] >= startAfter);
             }
         }
     }

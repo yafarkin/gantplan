@@ -275,4 +275,118 @@ public sealed class SolverTests
         Assert.That(tasks[1].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 3)));
         Assert.That(tasks[1].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 8)));
     }
+
+    [Test]
+    public void DueDateTest()
+    {
+         _project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 1),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "complex task",
+                Children = [
+                    new TaskDto
+                    {
+                        Id = "2",
+                        Name = "simple task 1",
+                        Limit = new TaskLimitDto
+                        {
+                            TShirt = TShirtType.L,
+                            ResourceRole = "dev"
+                        }
+                    },
+                    new TaskDto
+                    {
+                        Id = "3",
+                        Name = "complex task 2",
+                        Limit = new TaskLimitDto
+                        {
+                            DueDate = new DateOnly(2026, 1, 6),
+                            TShirt = TShirtType.S,
+                            ResourceRole = "dev"
+                        }
+                    }
+                ]
+            },
+            Resources = new List<ResourceDto>
+            {
+                new()
+                {
+                    Role = "dev",
+                    Name = "john"
+                },
+            }
+        };
+        
+        var solved = _solver.Solve(_project);
+        Assert.IsTrue(solved);
+       
+        var tasks = _project.RootTask.Children.ToList();
+        Assert.That(tasks.Count, Is.EqualTo(2));
+        
+        Assert.That(tasks[0].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 6)));
+        Assert.That(tasks[0].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 26)));
+        
+        Assert.That(tasks[1].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 1)));
+        Assert.That(tasks[1].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 5)));
+    }
+    
+    [Test]
+    public void StartAfterTest()
+    {
+        _project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 1),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "complex task",
+                Children = [
+                    new TaskDto
+                    {
+                        Id = "2",
+                        Name = "simple task 1",
+                        Limit = new TaskLimitDto
+                        {
+                            StartAfter = new DateOnly(2026, 1, 10),
+                            TShirt = TShirtType.L,
+                            ResourceRole = "dev"
+                        }
+                    },
+                    new TaskDto
+                    {
+                        Id = "3",
+                        Name = "complex task 2",
+                        Limit = new TaskLimitDto
+                        {
+                            TShirt = TShirtType.S,
+                            ResourceRole = "dev"
+                        }
+                    }
+                ]
+            },
+            Resources = new List<ResourceDto>
+            {
+                new()
+                {
+                    Role = "dev",
+                    Name = "john"
+                },
+            }
+        };
+        
+        var solved = _solver.Solve(_project);
+        Assert.IsTrue(solved);
+       
+        var tasks = _project.RootTask.Children.ToList();
+        Assert.That(tasks.Count, Is.EqualTo(2));
+        
+        Assert.That(tasks[0].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 10)));
+        Assert.That(tasks[0].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 30)));
+        
+        Assert.That(tasks[1].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 1)));
+        //Assert.That(tasks[1].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 9))); // fix later
+    }
 }

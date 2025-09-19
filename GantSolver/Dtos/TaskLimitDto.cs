@@ -47,4 +47,14 @@ public sealed record TaskLimitDto
     /// (Optional) List of keys for tasks that must finish before this one can start.
     /// </summary>
     public ICollection<string> PredecessorIds { get; set; } = [];
+    
+    /// <summary>
+    /// (Optional) Due date for task.
+    /// </summary>
+    public DateOnly? DueDate { get; set; }
+    
+    /// <summary>
+    /// (Optional) The date after which the task can start.
+    /// </summary>
+    public DateOnly? StartAfter { get; set; }
 }

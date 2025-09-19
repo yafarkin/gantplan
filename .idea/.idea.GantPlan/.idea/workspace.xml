@@ -10,8 +10,9 @@
   <component name="ChangeListManager">
     <list default="true" id="f2fd0f2c-732b-41ee-8588-cbf1b7e2de9e" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.GantPlan/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.GantPlan/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ConsoleApp1/Program.cs" beforeDir="false" afterPath="$PROJECT_DIR$/ConsoleApp1/Program.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GantSolver/Dtos/TaskLimitDto.cs" beforeDir="false" afterPath="$PROJECT_DIR$/GantSolver/Dtos/TaskLimitDto.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/GantSolver/Logic/Solver.cs" beforeDir="false" afterPath="$PROJECT_DIR$/GantSolver/Logic/Solver.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Planner/Program.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Planner/Program.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Tests/SolverTests.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Tests/SolverTests.cs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -38,14 +39,11 @@
   }
 }</component>
   <component name="HighlightingSettingsPerFile">
-    <setting file="file://$PROJECT_DIR$/ConsoleApp1/Program.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Tests/NoTasksTests.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Tests/SolverTests.cs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/DecompilerCache/decompiler/d6eacc30f73c491c94ae7625a65c78ac77a00/df/e2e95b33/Assert.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/SourcesCache/46a322d26154b982566e1817203e5452c91223f93b0e392d9c5b4806696fdc1/Assert.cs" root0="FORCE_HIGHLIGHTING" />
-    <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/SourcesCache/48c3d3e27a3992b5816511af754196140ae50726131f3e6f6bdbf4a339e8364/Assert.Exceptions.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/SourcesCache/6780d13016c376c4491c5618b257d84da7eacf747ed2719783e775546b79b/ThrowHelper.cs" root0="FORCE_HIGHLIGHTING" />
-    <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/SourcesCache/8c9332bc207345dc19ba8c0e3b5ae32c091b3b1e51eedb3cb719a795d5dc8e5/IntegerExpressions.cs" root0="FORCE_HIGHLIGHTING" />
-    <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/SourcesCache/9ec14bf1a6ca9b18c9e62147b1cadf0959b3acbfc5c8c2b9d5c6fa12030/StringEnumConverter.cs" root0="FORCE_HIGHLIGHTING" />
   </component>
   <component name="KubernetesApiPersistence">{}</component>
   <component name="KubernetesApiProvider">{
@@ -67,24 +65,26 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;.NET Project.ConsoleApp1.executor&quot;: &quot;Debug&quot;,
-    &quot;.NET Project.Planner.executor&quot;: &quot;Debug&quot;,
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;d43f26c9-7cc0-4019-b2da-cd484236ce98.executor&quot;: &quot;Debug&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    ".NET Project.ConsoleApp1.executor": "Debug",
+    ".NET Project.Planner.executor": "Debug",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Nestor.new-chat-shown": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "d43f26c9-7cc0-4019-b2da-cd484236ce98.executor": "Debug",
+    "d4ed93f5-d601-4c4f-b64d-1542bc6d22e2.executor": "Debug",
+    "git-widget-placeholder": "master",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "preferences.pluginManager",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RunManager" selected=".NET Project.Planner">
     <configuration name="ConsoleApp1" type="DotNetProject" factoryName=".NET Project">
       <option name="EXE_PATH" value="" />
@@ -145,9 +145,7 @@
       <workItem from="1757753809383" duration="27000" />
       <workItem from="1757753896446" duration="10196000" />
       <workItem from="1757773719205" duration="941000" />
-      <workItem from="1757790003598" duration="30000" />
-      <workItem from="1757793136303" duration="5417000" />
-      <workItem from="1757799219887" duration="3046000" />
+      <workItem from="1758273851198" duration="2589000" />
     </task>
     <task id="LOCAL-00001" summary="Initial commit;">
       <option name="closed" value="true" />
@@ -204,6 +202,17 @@
   </component>
   <component name="UnityCheckinConfiguration" checkUnsavedScenes="true" />
   <component name="UnityProjectConfiguration" hasMinimizedUI="false" />
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
   <component name="VcsManagerConfiguration">
     <option name="CLEAR_INITIAL_COMMIT_MESSAGE" value="true" />
     <MESSAGE value="Initial commit;" />
@@ -241,16 +250,55 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" type="DotNet Breakpoints">
           <url>file://$PROJECT_DIR$/GantSolver/Logic/Solver.cs</url>
-          <line>300</line>
-          <properties documentPath="$PROJECT_DIR$/GantSolver/Logic/Solver.cs" containingFunctionPresentation="Method 'CreateTasksIntervals'">
+          <line>391</line>
+          <properties documentPath="$PROJECT_DIR$/GantSolver/Logic/Solver.cs" containingFunctionPresentation="Method 'CreateDependencyBetweenTasks'">
             <startOffsets>
-              <option value="10411" />
+              <option value="14250" />
             </startOffsets>
             <endOffsets>
-              <option value="10455" />
+              <option value="14333" />
             </endOffsets>
           </properties>
-          <option name="timeStamp" value="13" />
+          <option name="timeStamp" value="14" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DotNet Breakpoints">
+          <url>file://$PROJECT_DIR$/GantSolver/Logic/Solver.cs</url>
+          <line>397</line>
+          <properties documentPath="$PROJECT_DIR$/GantSolver/Logic/Solver.cs" containingFunctionPresentation="Method 'CreateDependencyBetweenTasks'">
+            <startOffsets>
+              <option value="14485" />
+            </startOffsets>
+            <endOffsets>
+              <option value="14574" />
+            </endOffsets>
+          </properties>
+          <option name="timeStamp" value="15" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DotNet Breakpoints">
+          <url>file://$PROJECT_DIR$/GantSolver/Logic/Solver.cs</url>
+          <line>57</line>
+          <properties documentPath="$PROJECT_DIR$/GantSolver/Logic/Solver.cs" containingFunctionPresentation="Method 'Solve'">
+            <startOffsets>
+              <option value="1842" />
+            </startOffsets>
+            <endOffsets>
+              <option value="1915" />
+            </endOffsets>
+          </properties>
+          <option name="timeStamp" value="16" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DotNet Breakpoints">
+          <url>file://$PROJECT_DIR$/Tests/SolverTests.cs</url>
+          <line>323</line>
+          <properties documentPath="$PROJECT_DIR$/Tests/SolverTests.cs" containingFunctionPresentation="Method 'DueDateTest'">
+            <startOffsets>
+              <option value="11785" />
+            </startOffsets>
+            <endOffsets>
+              <option value="11807" />
+            </endOffsets>
+          </properties>
+          <option name="timeStamp" value="17" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>
