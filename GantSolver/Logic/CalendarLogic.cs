@@ -44,7 +44,7 @@ public sealed class CalendarLogic
             
             if (workDay && resourceCalendar?.NonWorkingDays is not null)
             {
-                var p = resourceCalendar.NonWorkingDays.SingleOrDefault(x => d >= x.From && d <= x.To);
+                var p = resourceCalendar.NonWorkingDays.FirstOrDefault(x => d >= x.From && d <= x.To);
                 if (p is not null)
                 {
                     workDay = false;
@@ -53,7 +53,7 @@ public sealed class CalendarLogic
 
             if (!workDay && resourceCalendar?.WorkingDays is not null)
             {
-                var p = resourceCalendar.WorkingDays.SingleOrDefault(x => d >= x.From && d <= x.To);
+                var p = resourceCalendar.WorkingDays.FirstOrDefault(x => d >= x.From && d <= x.To);
                 if (p is not null)
                 {
                     workDay = true;
