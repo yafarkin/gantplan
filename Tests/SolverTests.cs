@@ -163,7 +163,7 @@ public sealed class SolverTests
         Assert.That(tasks[0].Fact.FinishDate, Is.Null);
         Assert.That(tasks[0].Fact.Records.Count, Is.EqualTo(1));
         Assert.That(tasks[0].Fact.Records[0].RecordedAt, Is.EqualTo(tasks[0].Plan!.PlannedStart));
-        Assert.That(tasks[0].Fact.Records[0].Duration, Is.EqualTo(tasks[0].Limit!.TShirt!.Value.ToDays()));
+        Assert.That(tasks[0].Fact.Records[0].Duration, Is.EqualTo(tasks[0].Limit!.TShirt!.Value.ToDays(100)));
         Assert.That(tasks[0].Fact.Records[0].ResourceName, Is.EqualTo(expectedResource1));
         Assert.That(tasks[0].Fact.Records[0].Type, Is.EqualTo(TaskFactRecordType.Started));
         
@@ -177,7 +177,7 @@ public sealed class SolverTests
         Assert.That(tasks[1].Fact.FinishDate, Is.Null);
         Assert.That(tasks[1].Fact.Records.Count, Is.EqualTo(1));
         Assert.That(tasks[1].Fact.Records[0].RecordedAt, Is.EqualTo(tasks[1].Plan!.PlannedStart));
-        Assert.That(tasks[1].Fact.Records[0].Duration, Is.EqualTo(tasks[1].Limit!.TShirt!.Value.ToDays()));
+        Assert.That(tasks[1].Fact.Records[0].Duration, Is.EqualTo(tasks[1].Limit!.TShirt!.Value.ToDays(100)));
         Assert.That(tasks[1].Fact.Records[0].ResourceName, Is.EqualTo(expectedResource1));
         Assert.That(tasks[1].Fact.Records[0].Type, Is.EqualTo(TaskFactRecordType.Started));
         

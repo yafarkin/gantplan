@@ -32,13 +32,33 @@ public enum TShirtType
 
 public static class TShirtTypeExtensions
 {
-    public static int ToDays(this TShirtType tShirtType) => tShirtType switch
+    public static int ToDays(this TShirtType tShirtType, int confidence)
     {
-        TShirtType.XS => 1,
-        TShirtType.S => 3,
-        TShirtType.M => 7,
-        TShirtType.L => 15,
-        TShirtType.XL => 25,
-        _ => throw new ArgumentOutOfRangeException(nameof(tShirtType), tShirtType, null)
-    };
+        var minRange = tShirtType switch
+        {
+            TShirtType.XS => 1,
+            TShirtType.S => 2,
+            TShirtType.M => 4,
+            TShirtType.L => 8,
+            TShirtType.XL => 15,
+            _ => throw new ArgumentOutOfRangeException(nameof(tShirtType), tShirtType, null)
+        };
+
+        var maxRange = tShirtType switch
+        {
+            TShirtType.XS => 1,
+            TShirtType.S => 3,
+            TShirtType.M => 7,
+            TShirtType.L => 15,
+            TShirtType.XL => 25,
+            _ => throw new ArgumentOutOfRangeException(nameof(tShirtType), tShirtType, null)
+        };
+        
+        var conf = Math.Clamp(confidence, 0, 100);
+        var range = maxRange - minRange;
+        var result = minRange + (int)Math.Round(range * (100 - conf) / 100.0);
+        
+        return result;
+        //return maxRange;
+    }
 }

@@ -423,7 +423,7 @@ public sealed class Solver
 
     private int CalcTaskLimitDuration(TaskDto task, ResourceDto resource)
     {
-        var duration = task.Limit!.Duration ?? task.Limit.TShirt!.Value.ToDays();
+        var duration = task.Limit!.Duration ?? task.Limit.TShirt!.Value.ToDays(resource.Confidence);
 
         if (task.Limit.Buffer is not null)
         {

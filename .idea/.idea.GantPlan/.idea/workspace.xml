@@ -9,10 +9,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f2fd0f2c-732b-41ee-8588-cbf1b7e2de9e" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/Tests/ExtensionTests.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/.idea.GantPlan/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.GantPlan/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GantSolver/Dtos/TaskLimitDto.cs" beforeDir="false" afterPath="$PROJECT_DIR$/GantSolver/Dtos/TaskLimitDto.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GantSolver/Dtos/Enums/TShirtType.cs" beforeDir="false" afterPath="$PROJECT_DIR$/GantSolver/Dtos/Enums/TShirtType.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GantSolver/Dtos/ResourceDto.cs" beforeDir="false" afterPath="$PROJECT_DIR$/GantSolver/Dtos/ResourceDto.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/GantSolver/Logic/Solver.cs" beforeDir="false" afterPath="$PROJECT_DIR$/GantSolver/Logic/Solver.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Planner/Program.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Planner/Program.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Tests/SolverTests.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Tests/SolverTests.cs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -35,10 +36,11 @@
   <component name="GithubPullRequestsUISettings">{
   &quot;selectedUrlAndAccountId&quot;: {
     &quot;url&quot;: &quot;https://github.com/yafarkin/gantplan.git&quot;,
-    &quot;accountId&quot;: &quot;7a75c933-3b52-4786-acf1-cafdb0c6c54a&quot;
+    &quot;accountId&quot;: &quot;58f4c6c1-752b-4755-ac8f-93264fdb8943&quot;
   }
 }</component>
   <component name="HighlightingSettingsPerFile">
+    <setting file="file://$PROJECT_DIR$/Tests/ExtensionTests.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Tests/NoTasksTests.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Tests/SolverTests.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/DecompilerCache/decompiler/d6eacc30f73c491c94ae7625a65c78ac77a00/df/e2e95b33/Assert.cs" root0="FORCE_HIGHLIGHTING" />
@@ -65,26 +67,26 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    ".NET Project.ConsoleApp1.executor": "Debug",
-    ".NET Project.Planner.executor": "Debug",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "Nestor.new-chat-shown": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "d43f26c9-7cc0-4019-b2da-cd484236ce98.executor": "Debug",
-    "d4ed93f5-d601-4c4f-b64d-1542bc6d22e2.executor": "Debug",
-    "git-widget-placeholder": "master",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "preferences.pluginManager",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;.NET Project.ConsoleApp1.executor&quot;: &quot;Debug&quot;,
+    &quot;.NET Project.Planner.executor&quot;: &quot;Debug&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Nestor.new-chat-shown&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;d43f26c9-7cc0-4019-b2da-cd484236ce98.executor&quot;: &quot;Debug&quot;,
+    &quot;d4ed93f5-d601-4c4f-b64d-1542bc6d22e2.executor&quot;: &quot;Debug&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RunManager" selected=".NET Project.Planner">
     <configuration name="ConsoleApp1" type="DotNetProject" factoryName=".NET Project">
       <option name="EXE_PATH" value="" />
@@ -145,7 +147,9 @@
       <workItem from="1757753809383" duration="27000" />
       <workItem from="1757753896446" duration="10196000" />
       <workItem from="1757773719205" duration="941000" />
-      <workItem from="1758273851198" duration="2589000" />
+      <workItem from="1758273851198" duration="2981000" />
+      <workItem from="1758792919550" duration="560000" />
+      <workItem from="1758893410083" duration="1480000" />
     </task>
     <task id="LOCAL-00001" summary="Initial commit;">
       <option name="closed" value="true" />
@@ -179,7 +183,15 @@
       <option name="project" value="LOCAL" />
       <updated>1757790028409</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="Added duedate/startafter limitations;">
+      <option name="closed" value="true" />
+      <created>1758276754241</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1758276754241</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -218,7 +230,8 @@
     <MESSAGE value="Initial commit;" />
     <MESSAGE value="Added simple tests, but some bugs found;" />
     <MESSAGE value="debugging;" />
-    <option name="LAST_COMMIT_MESSAGE" value="debugging;" />
+    <MESSAGE value="Added duedate/startafter limitations;" />
+    <option name="LAST_COMMIT_MESSAGE" value="Added duedate/startafter limitations;" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -240,10 +253,10 @@
           <line>269</line>
           <properties documentPath="$PROJECT_DIR$/Tests/SolverTests.cs" containingFunctionPresentation="Method 'CalendarTest'">
             <startOffsets>
-              <option value="9877" />
+              <option value="9883" />
             </startOffsets>
             <endOffsets>
-              <option value="9949" />
+              <option value="9955" />
             </endOffsets>
           </properties>
           <option name="timeStamp" value="11" />
@@ -292,13 +305,26 @@
           <line>323</line>
           <properties documentPath="$PROJECT_DIR$/Tests/SolverTests.cs" containingFunctionPresentation="Method 'DueDateTest'">
             <startOffsets>
-              <option value="11785" />
+              <option value="11790" />
             </startOffsets>
             <endOffsets>
-              <option value="11807" />
+              <option value="11812" />
             </endOffsets>
           </properties>
           <option name="timeStamp" value="17" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DotNet Breakpoints">
+          <url>file://$PROJECT_DIR$/GantSolver/Dtos/Enums/TShirtType.cs</url>
+          <line>36</line>
+          <properties documentPath="$PROJECT_DIR$/GantSolver/Dtos/Enums/TShirtType.cs" containingFunctionPresentation="Method 'ToDays'">
+            <startOffsets>
+              <option value="539" />
+            </startOffsets>
+            <endOffsets>
+              <option value="843" />
+            </endOffsets>
+          </properties>
+          <option name="timeStamp" value="18" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>
