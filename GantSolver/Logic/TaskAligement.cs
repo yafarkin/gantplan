@@ -29,18 +29,18 @@ public sealed class TaskAlignment
         {
             throw new Exception("Root task cannot be null");
         }
-        
-        ValidateAndFill(project.RootTask, weights);
+
+        ValidateAndFill(null, project.RootTask, weights);
         
         if (FlattenTasksToSolve.Count == 0)
         {
             throw new Exception("No tasks found");
         }
 
-        PostFill(project.RootTask, new List<TaskDto>());
+        PostFill(project.RootTask);
     }
 
-    private void ValidateAndFill(TaskDto task, Dictionary<int, long> weights)
+    private void ValidateAndFill(TaskDto? parentTask, TaskDto task, Dictionary<int, long> weights)
     {
         if (string.IsNullOrWhiteSpace(task.Id))
         {
@@ -51,12 +51,25 @@ public sealed class TaskAlignment
         {
             throw new Exception($"Task with id {task.Id} already exists");
         }
+        
+        task.WorkType ??= parentTask?.WorkType;
+        task.IsOkr ??= parentTask?.IsOkr;
+
+        if (task.Limit is not null)
+        {
+            task.Limit.Priority ??= parentTask?.Limit?.Priority;
+        }
+        
+        if (parentTask is not null && parentTask.Disabled)
+        {
+            task.Disabled = parentTask.Disabled;
+        }
 
         if (task.HasChild)
         {
             foreach (var child in task.Children)
             {
-                ValidateAndFill(child, weights);
+                ValidateAndFill(task, child, weights);
             }
 
             return;
@@ -82,51 +95,22 @@ public sealed class TaskAlignment
         }
     }
     
-    private void PostFill(TaskDto task, IList<TaskDto> parentTasks)
+    private void PostFill(TaskDto task)
     {
         if (task.HasChild)
         {
-            parentTasks.Add(task);
             foreach (var child in task.Children)
             {
-                PostFill(child, parentTasks);
+                PostFill(child);
             }
 
-            parentTasks.Remove(task);
-            
             return;
         }
 
         task = FlattenTasksCopy[task.Id];
         
-        if (task.Limit!.Priority is null)
-        {
-            for (var i = parentTasks.Count - 1; i >= 0; i--)
-            {
-                var parentTask = parentTasks[i];
-                if (parentTask.Limit?.Priority is not null)
-                {
-                    task.Limit.Priority = parentTask.Limit.Priority.Value;
-                    break;
-                }
-            }
-        }
-
-        if (task.WorkType is null)
-        {
-            for (var i = parentTasks.Count - 1; i >= 0; i--)
-            {
-                var parentTask = parentTasks[i];
-                if (parentTask.WorkType is not null)
-                {
-                    task.WorkType = parentTask.WorkType.Value;
-                    break;
-                }
-            }
-        }
-
         var predecessorIds = new List<string>();
-        foreach (var predecessorId in task.Limit.PredecessorIds)
+        foreach (var predecessorId in task.Limit!.PredecessorIds)
         {
             var preIds = new List<string>();
 

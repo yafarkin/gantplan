@@ -22,8 +22,10 @@ public sealed record TaskDto
     public WorkType? WorkType { get; set; }
     
     public ICollection<TaskDto> Children { get; init; } = [];
+    
+    public bool? IsOkr { get; set; }
 
-    public bool Disabled { get; init; }
+    public bool Disabled { get; set; }
 
     [JsonIgnore]
     public bool HasChild => Children.Any();

@@ -59,6 +59,5 @@ public static class TShirtTypeExtensions
         var result = minRange + (int)Math.Round(range * (100 - conf) / 100.0);
         
         return result;
-        //return maxRange;
     }
 }
