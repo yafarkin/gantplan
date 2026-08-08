@@ -149,6 +149,7 @@ public sealed class SolverTests
         Assert.IsTrue(solved);
 
         var expectedResource1 = _project.Resources.First().Name;
+        var expectedResource1Confidence = _project.Resources.First().Confidence;
         var expectedResource2 = _project.Resources.Last().Name;
 
         var tasks = _project.RootTask.Children.ToList();
@@ -163,7 +164,7 @@ public sealed class SolverTests
         Assert.That(tasks[0].Fact.FinishDate, Is.Null);
         Assert.That(tasks[0].Fact.Records.Count, Is.EqualTo(1));
         Assert.That(tasks[0].Fact.Records[0].RecordedAt, Is.EqualTo(tasks[0].Plan!.PlannedStart));
-        Assert.That(tasks[0].Fact.Records[0].Duration, Is.EqualTo(tasks[0].Limit!.TShirt!.Value.ToDays(100)));
+        Assert.That(tasks[0].Fact.Records[0].Duration, Is.EqualTo(tasks[0].Limit!.TShirt!.Value.ToDays(expectedResource1Confidence)));
         Assert.That(tasks[0].Fact.Records[0].ResourceName, Is.EqualTo(expectedResource1));
         Assert.That(tasks[0].Fact.Records[0].Type, Is.EqualTo(TaskFactRecordType.Started));
         
@@ -177,13 +178,13 @@ public sealed class SolverTests
         Assert.That(tasks[1].Fact.FinishDate, Is.Null);
         Assert.That(tasks[1].Fact.Records.Count, Is.EqualTo(1));
         Assert.That(tasks[1].Fact.Records[0].RecordedAt, Is.EqualTo(tasks[1].Plan!.PlannedStart));
-        Assert.That(tasks[1].Fact.Records[0].Duration, Is.EqualTo(tasks[1].Limit!.TShirt!.Value.ToDays(100)));
+        Assert.That(tasks[1].Fact.Records[0].Duration, Is.EqualTo(tasks[1].Limit!.TShirt!.Value.ToDays(expectedResource1Confidence)));
         Assert.That(tasks[1].Fact.Records[0].ResourceName, Is.EqualTo(expectedResource1));
         Assert.That(tasks[1].Fact.Records[0].Type, Is.EqualTo(TaskFactRecordType.Started));
         
         Assert.That(tasks[2].Plan!.ResourceName, Is.EqualTo(expectedResource2));
         Assert.That(tasks[2].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 1)));
-        Assert.That(tasks[2].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 5)));
+        Assert.That(tasks[2].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 3)));
     }
 
     [Test]

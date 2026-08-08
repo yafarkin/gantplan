@@ -306,12 +306,13 @@ public sealed class Solver
                     var beforeEnd = _model.NewBoolVar($"before_vac_end_{day}_{resource.Name}_{taskKey}");
                     var afterStart = _model.NewBoolVar($"after_vac_start_{day}_{resource.Name}_{taskKey}");
                 
-                    _model.Add(_starts[taskKey] < day + 1).OnlyEnforceIf([cross, beforeEnd, personUseVar]);
-                    _model.Add(_starts[taskKey] >= day + 1).OnlyEnforceIf([cross.Not(), beforeEnd.Not(), personUseVar]);
-                
-                    _model.Add(_ends[taskKey] > day).OnlyEnforceIf([cross, afterStart, personUseVar]);
-                    _model.Add(_ends[taskKey] <= day).OnlyEnforceIf([cross.Not(), afterStart.Not(), personUseVar]);
-                
+                    _model.Add(_starts[taskKey] < day + 1).OnlyEnforceIf([beforeEnd, personUseVar]);
+                    _model.Add(_starts[taskKey] >= day + 1).OnlyEnforceIf([beforeEnd.Not(), personUseVar]);
+
+                    _model.Add(_ends[taskKey] > day).OnlyEnforceIf([afterStart, personUseVar]);
+                    _model.Add(_ends[taskKey] <= day).OnlyEnforceIf([afterStart.Not(), personUseVar]);
+
+                    _model.AddBoolAnd([beforeEnd, afterStart]).OnlyEnforceIf([cross, personUseVar]);
                     _model.AddBoolOr([cross, beforeEnd.Not(), afterStart.Not()]).OnlyEnforceIf(personUseVar);
                 
                     currentCrosses.Add(cross);
