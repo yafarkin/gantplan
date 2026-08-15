@@ -41,8 +41,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <None Remove="Templates\timeline_template.html"/>
-        <Content Include="Templates\timeline_template.html">
+        <None Remove="Templates\task_tree_template.html"/>
+        <Content Include="Templates\task_tree_template.html">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
     </ItemGroup>

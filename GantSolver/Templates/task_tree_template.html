@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Дерево задач</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background: #f8f9fa;
+            color: #343a40;
+        }
+
+        h2 {
+            margin-bottom: 15px;
+        }
+
+        /* ===== CONTROLS ===== */
+        .controls {
+            margin-bottom: 10px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .controls input, .controls select, .controls button {
+            padding: 6px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            background: #fff;
+        }
+
+        .controls input {
+            min-width: 260px;
+        }
+
+        .controls button {
+            background: #007bff;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            transition: background .2s;
+        }
+
+        .controls button:hover {
+            background: #0056b3;
+        }
+
+        /* ===== CHART ===== */
+        #chart {
+            overflow: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            background: #fff;
+            max-height: 78vh;
+        }
+
+        .ruler-row, .tree-row {
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid #eee;
+            white-space: nowrap;
+        }
+
+        .ruler-row {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            background: #343a40;
+            color: #fff;
+        }
+
+        .tree-col {
+            flex: 0 0 520px;
+            padding: 4px 8px;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        /* только название задачи обрезается многоточием - бейджи (Jira,
+           исполнитель, статус) должны оставаться видимыми всегда, поэтому
+           у них своя, нерезиновая, зона */
+        .name-wrap {
+            flex: 1 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .badges {
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+
+        .bar-col {
+            flex: 0 0 auto;
+            padding: 3px 0;
+        }
+
+        .tree-row:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        .tree-row:hover {
+            background: #eef4ff;
+        }
+
+        .tree-row.muted {
+            opacity: .55;
+        }
+
+        .caret {
+            display: inline-block;
+            width: 16px;
+            cursor: pointer;
+            user-select: none;
+            color: #6c757d;
+        }
+
+        .caret-empty {
+            cursor: default;
+        }
+
+        .task-id {
+            color: #6c757d;
+            font-size: 12px;
+        }
+
+        .jira-badge, .assignee-badge, .status-badge {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+
+        a.jira-badge {
+            background: #e7f1ff;
+            color: #0d6efd;
+            text-decoration: none;
+        }
+
+        a.jira-badge:hover {
+            text-decoration: underline;
+        }
+
+        span.jira-badge {
+            background: #eee;
+            color: #6c757d;
+        }
+
+        .assignee-badge {
+            background: #e9ecef;
+            color: #343a40;
+        }
+
+        .status-badge {
+            background: #f8d7da;
+            color: #842029;
+        }
+
+        mark {
+            background: #fff3a0;
+            padding: 0;
+        }
+
+        .empty-message {
+            padding: 16px;
+            color: #6c757d;
+        }
+
+        /* ===== VIEW SWITCH ===== */
+        .view-switch {
+            display: inline-flex;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .view-switch button {
+            border-radius: 0 !important;
+            background: #fff !important;
+            color: #343a40 !important;
+        }
+
+        .view-switch button.active {
+            background: #007bff !important;
+            color: #fff !important;
+        }
+
+        .legend {
+            margin-bottom: 10px;
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        .legend .swatch {
+            display: inline-block;
+            width: 28px;
+            height: 10px;
+            vertical-align: middle;
+            border-radius: 2px;
+            background: linear-gradient(90deg, #1f77b4 0 35%, rgba(255,255,255,.55) 35% 65%, #1f77b4 65% 100%);
+        }
+    </style>
+</head>
+<body>
+<h2>Дерево задач</h2>
+<div class="controls">
+    <div class="view-switch">
+        <button data-mode="tasks" id="view-tasks">По задачам</button>
+        <button data-mode="resources" id="view-resources">По исполнителям</button>
+    </div>
+    <input id="search" placeholder="Поиск по номеру или названию задачи" type="text">
+    <select id="assignee-filter">
+        <option value="">Все исполнители</option>
+    </select>
+    <button id="expand-all">Развернуть всё</button>
+    <button id="collapse-all">Свернуть всё</button>
+    <button id="clear-filters">Сбросить фильтры</button>
+</div>
+<div class="legend"><span class="swatch"></span> светлый участок полоски - нерабочий день исполнителя (выходной/праздник/отпуск), тёмный - рабочий</div>
+<div id="chart"></div>
+
+<script>
+    /* -------------------- placeholders, подставляются бэкендом -------------------- */
+    const treeData = {{TreeData}};
+    const globalNonWorking = {{global_non_working}};
+    const resourceNonWorking = {{resource_non_working}};
+    /* -------------------------------------------------------------------------------- */
+
+    const TIMELINE_WIDTH = 900; // px - ширина зоны с барами, общая для линейки и всех строк
+    const ROW_HEIGHT = 24;
+
+    /* ===== DATE HELPERS ===== */
+    function parseDate(str) {
+        const [y, m, d] = str.split('-').map(Number);
+        return new Date(y, m - 1, d);
+    }
+
+    const fmtDate = d3.timeFormat('%Y-%m-%d');
+
+    function ymdLocal(d) {
+        return d.toLocaleDateString('sv-SE');
+    }
+
+    function isWeekend(d) {
+        return d.getDay() === 0 || d.getDay() === 6;
+    }
+
+    const globalHolidaySet = new Set(globalNonWorking);
+
+    function isNonWork(d, assignee) {
+        if (isWeekend(d) || globalHolidaySet.has(ymdLocal(d))) return true;
+        const own = resourceNonWorking[assignee];
+        return !!own && own.includes(ymdLocal(d));
+    }
+
+    /* ===== INDEX THE TREE (даты, глубина, ссылка на родителя) ===== */
+    const nodeById = new Map();
+    const allDates = [];
+
+    (function index(node, depth) {
+        node._depth = depth;
+        if (node.Start) {
+            node._start = parseDate(node.Start);
+            allDates.push(node._start);
+        }
+        if (node.End) {
+            node._end = parseDate(node.End);
+            allDates.push(node._end);
+        }
+        nodeById.set(node.Id, node);
+        node.Children.forEach(c => index(c, depth + 1));
+    })(treeData, 0);
+
+    const minDate = d3.min(allDates) || new Date();
+    const maxDate = d3.max(allDates) || new Date();
+    const xScale = d3.scaleTime()
+        .domain([minDate, d3.timeDay.offset(maxDate, 1)])
+        .range([0, TIMELINE_WIDTH]);
+
+    // цвет - по ColorGroupId (задаётся бэкендом: id ближайшего предка на
+    // глубине 1, то есть все подзадачи одной верхнеуровневой группы красятся
+    // одним цветом независимо от того, как устроены сами id задач)
+    const colorScale = d3.scaleOrdinal(d3.schemeCategory10)
+        .domain(Array.from(new Set([...nodeById.values()].map(n => n.ColorGroupId))));
+
+    /* ===== ASSIGNEE FILTER OPTIONS ===== */
+    const assignees = Array.from(new Set([...nodeById.values()].map(n => n.Assignee).filter(Boolean))).sort();
+    d3.select('#assignee-filter')
+        .selectAll('option.dyn')
+        .data(assignees)
+        .enter()
+        .append('option')
+        .classed('dyn', true)
+        .attr('value', d => d)
+        .text(d => d);
+
+    /* ===== VIEW: "по задачам" (дерево как есть) или "по исполнителям"
+       (плоский список задач под каждым исполнителем). Оба режима рисуются
+       одной и той же renderRow/markVisible логикой - "по исполнителям"
+       просто подсовывает синтетические узлы-заголовки вместо настоящего
+       дерева, собранные из тех же самых листьев (см. buildResourceRoots). */
+    let viewMode = 'tasks';
+
+    function getRoots() {
+        return viewMode === 'tasks' ? [treeData] : buildResourceRoots();
+    }
+
+    function buildResourceRoots() {
+        const leaves = [];
+        (function collect(node) {
+            if (node.Children.length === 0) leaves.push(node);
+            else node.Children.forEach(collect);
+        })(treeData);
+
+        const byAssignee = d3.group(leaves, l => l.Assignee || 'Без исполнителя');
+
+        return Array.from(byAssignee, ([assignee, tasks]) => ({
+            Id: `@resource@${assignee}`,
+            Name: assignee,
+            JiraKey: null, JiraUrl: null, Assignee: null,
+            Start: null, End: null, StatusLabel: null,
+            ColorGroupId: assignee,
+            _isGroupHeader: true,
+            Children: tasks.slice().sort((a, b) => (a.Start || '').localeCompare(b.Start || ''))
+        })).sort((a, b) => a.Name.localeCompare(b.Name));
+    }
+
+    /* ===== EXPAND STATE =====
+       Список "свёрнутых" id, а не "развёрнутых" - так по умолчанию (пока
+       id нет в списке) всё развёрнуто, включая узлы режима "по
+       исполнителям", которые появляются только при переключении и не
+       могли бы попасть в whitelist заранее. */
+    const collapsedIds = new Set();
+
+    function isExpanded(node) {
+        return !collapsedIds.has(node.Id);
+    }
+
+    /* ===== FILTERING ===== */
+    function nodeMatches(node, query, assignee) {
+        const matchesQuery = !query ||
+            node.Name.toLowerCase().includes(query) ||
+            (!node._isGroupHeader && node.Id.toLowerCase().includes(query)) ||
+            (node.JiraKey && node.JiraKey.toLowerCase().includes(query));
+        const matchesAssignee = !assignee || node.Assignee === assignee;
+        return matchesQuery && matchesAssignee;
+    }
+
+    // Помечает узел как видимый, если подходит он сам или хоть один потомок;
+    // ветки, ведущие к найденному, автоматически разворачиваются.
+    function markVisible(node, query, assignee) {
+        const anyChildVisible = node.Children
+            .map(c => markVisible(c, query, assignee))
+            .some(Boolean);
+        node._selfMatch = nodeMatches(node, query, assignee);
+        node._visible = node._selfMatch || anyChildVisible;
+        if (anyChildVisible && (query || assignee)) {
+            collapsedIds.delete(node.Id);
+        }
+        return node._visible;
+    }
+
+    function appendHighlighted(selection, text, query) {
+        const idx = query ? text.toLowerCase().indexOf(query) : -1;
+        if (idx === -1) {
+            selection.text(text);
+            return;
+        }
+        selection.text(null);
+        selection.append(() => document.createTextNode(text.slice(0, idx)));
+        selection.append('mark').text(text.slice(idx, idx + query.length));
+        selection.append(() => document.createTextNode(text.slice(idx + query.length)));
+    }
+
+    /* ===== RENDER: RULER (линейка дат, общая для всех строк) ===== */
+    function renderRuler() {
+        const row = d3.select('#chart').append('div').attr('class', 'ruler-row');
+        row.append('div').attr('class', 'tree-col').text('Задача');
+
+        const svg = row.append('div').attr('class', 'bar-col')
+            .append('svg').attr('width', TIMELINE_WIDTH).attr('height', 22);
+
+        const days = d3.timeDay.range(minDate, d3.timeDay.offset(maxDate, 1));
+        svg.selectAll('rect.nonwork-band')
+            .data(days.filter(d => isWeekend(d) || globalHolidaySet.has(ymdLocal(d))))
+            .enter().append('rect')
+            .attr('x', d => xScale(d))
+            .attr('y', 0)
+            .attr('width', d => Math.max(1, xScale(d3.timeDay.offset(d, 1)) - xScale(d)))
+            .attr('height', 22)
+            .attr('fill', 'rgba(255,255,255,.15)');
+
+        svg.selectAll('text.tick')
+            .data(d3.timeWeek.range(minDate, d3.timeDay.offset(maxDate, 1)))
+            .enter().append('text')
+            .attr('x', d => xScale(d) + 2)
+            .attr('y', 15)
+            .attr('fill', '#fff')
+            .attr('font-size', 11)
+            .text(d => fmtDate(d));
+    }
+
+    /* ===== RENDER: ONE TASK ROW =====
+       depth передаётся явно, а не берётся из node._depth: в режиме "по
+       исполнителям" одни и те же узлы-задачи оказываются на другой
+       глубине, чем в дереве, а node - общий объект (тот же самый лист). */
+    function renderRow(container, node, query, depth) {
+        if (!node._visible) return;
+
+        const row = container.append('div').attr('class', 'tree-row');
+        if (node.StatusLabel) row.classed('muted', true);
+
+        const label = row.append('div').attr('class', 'tree-col')
+            .style('padding-left', `${8 + depth * 18}px`);
+
+        // название - в отдельной резиновой зоне (только оно обрезается
+        // многоточием, если не помещается); бейджи - в своей, нерезиновой.
+        const nameWrap = label.append('div').attr('class', 'name-wrap').attr('title', node.Name);
+        const badges = label.append('div').attr('class', 'badges');
+
+        const hasChildren = node.Children.length > 0;
+        const caret = nameWrap.append('span').attr('class', hasChildren ? 'caret' : 'caret caret-empty');
+        if (hasChildren) {
+            caret.text(isExpanded(node) ? '▾' : '▸')
+                .on('click', () => {
+                    if (isExpanded(node)) collapsedIds.add(node.Id); else collapsedIds.delete(node.Id);
+                    render();
+                });
+        }
+
+        if (!node._isGroupHeader) {
+            appendHighlighted(nameWrap.append('span').attr('class', 'task-id'), node.Id + ' ', query);
+        }
+        const nameSpan = nameWrap.append('span');
+        if (node._isGroupHeader) nameSpan.style('font-weight', '600');
+        appendHighlighted(nameSpan, node.Name, query);
+
+        if (node.JiraKey) {
+            const jira = badges.append(node.JiraUrl ? 'a' : 'span').attr('class', 'jira-badge').text(node.JiraKey);
+            if (node.JiraUrl) jira.attr('href', node.JiraUrl).attr('target', '_blank').attr('rel', 'noopener');
+        }
+        if (node.Assignee) {
+            badges.append('span').attr('class', 'assignee-badge').text(node.Assignee);
+        }
+        if (node.StatusLabel) {
+            badges.append('span').attr('class', 'status-badge').text(node.StatusLabel);
+        }
+
+        const barCol = row.append('div').attr('class', 'bar-col');
+        if (node._start && node._end) {
+            const svg = barCol.append('svg').attr('width', TIMELINE_WIDTH).attr('height', ROW_HEIGHT);
+            const x0 = xScale(node._start);
+            const x1 = xScale(d3.timeDay.offset(node._end, 1));
+
+            svg.append('rect')
+                .attr('x', x0).attr('y', 3)
+                .attr('width', Math.max(2, x1 - x0)).attr('height', ROW_HEIGHT - 6)
+                .attr('rx', 3)
+                .attr('fill', colorScale(node.ColorGroupId))
+                .append('title')
+                .text(`${node.Id} — ${node.Name}\n${fmtDate(node._start)} → ${fmtDate(node._end)}${node.Assignee ? '\n' + node.Assignee : ''}`);
+
+            // нерабочие дни исполнителя внутри интервала - лёгкая засветка поверх бара
+            if (node.Assignee) {
+                d3.timeDay.range(node._start, d3.timeDay.offset(node._end, 1))
+                    .filter(d => isNonWork(d, node.Assignee))
+                    .forEach(d => {
+                        svg.append('rect')
+                            .attr('x', xScale(d)).attr('y', 3)
+                            .attr('width', Math.max(1, xScale(d3.timeDay.offset(d, 1)) - xScale(d)))
+                            .attr('height', ROW_HEIGHT - 6)
+                            .attr('fill', 'rgba(255,255,255,.55)');
+                    });
+            }
+        }
+
+        if (hasChildren && isExpanded(node)) {
+            node.Children.forEach(c => renderRow(container, c, query, depth + 1));
+        }
+    }
+
+    /* ===== MAIN RENDER ===== */
+    function render() {
+        const query = d3.select('#search').property('value').trim().toLowerCase();
+        const assignee = d3.select('#assignee-filter').property('value');
+        const roots = getRoots();
+        const anyVisible = roots.map(r => markVisible(r, query, assignee)).some(Boolean);
+
+        const chart = d3.select('#chart').html('');
+        renderRuler();
+
+        if (!anyVisible) {
+            chart.append('div').attr('class', 'empty-message').text('Ничего не найдено');
+            return;
+        }
+
+        roots.forEach(r => renderRow(chart, r, query, 0));
+    }
+
+    function setAllExpanded(value) {
+        (function walk(node) {
+            if (value) collapsedIds.delete(node.Id); else if (node.Children.length) collapsedIds.add(node.Id);
+            node.Children.forEach(walk);
+        })({Id: '@root@', Children: getRoots()});
+    }
+
+    /* ===== CONTROLS ===== */
+    d3.select('#search').on('input', render);
+    d3.select('#assignee-filter').on('change', render);
+    d3.select('#expand-all').on('click', () => { setAllExpanded(true); render(); });
+    d3.select('#collapse-all').on('click', () => { setAllExpanded(false); render(); });
+    d3.select('#clear-filters').on('click', () => {
+        d3.select('#search').property('value', '');
+        d3.select('#assignee-filter').property('value', '');
+        render();
+    });
+
+    d3.selectAll('.view-switch button').on('click', function () {
+        viewMode = this.dataset.mode;
+        d3.selectAll('.view-switch button').classed('active', false);
+        d3.select(this).classed('active', true);
+        render();
+    });
+    d3.select('#view-tasks').classed('active', true);
+
+    render();
+</script>
+</body>
+</html>

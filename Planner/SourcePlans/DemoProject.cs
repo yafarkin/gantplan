@@ -10,6 +10,7 @@ public static class DemoProject
         var project = new ProjectDto
         {
             ProjectStart = new DateOnly(2026, 1, 1),
+            BaseJiraUrl = "https://example.atlassian.net/browse/",
             RootTask = new TaskDto
             {
                 Id = "1",
@@ -29,6 +30,7 @@ public static class DemoProject
                             {
                                 Id = "1.1.1.10",
                                 Name = "BF-1. Backend development",
+                                JiraKey = "DEMO-101",
                                 Limit = new TaskLimitDto
                                 {
                                     ResourceRole = "dev-be",
@@ -68,6 +70,7 @@ public static class DemoProject
                             {
                                 Id = "1.2.1.10",
                                 Name = "BF-2. Backend development",
+                                JiraKey = "DEMO-102",
                                 Limit = new TaskLimitDto
                                 {
                                     Priority = 1,

@@ -41,8 +41,8 @@ var jsonSettings = new JsonSerializerSettings
 var outputJson = JsonConvert.SerializeObject(project, jsonSettings);
 await File.WriteAllTextAsync("project.json", outputJson);
 
-var timelineContext = TimelineDataPreparer.Prepare(project);
-TimelineDataPreparer.GenerateHtml("Templates/timeline_template.html", "timeline.html", timelineContext);
+var treeContext = TaskTreeDataPreparer.Prepare(project);
+TaskTreeDataPreparer.GenerateHtml("Templates/task_tree_template.html", "timeline.html", treeContext);
 RevealFile("timeline.html");
 
 static void RevealFile(string fullPath)
