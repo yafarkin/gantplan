@@ -24,6 +24,7 @@ public static class DemoProject
                     {
                         Id = "1.1",
                         Name = "Business feature 1",
+                        JiraKey = "DEMO-100",
                         Tags = new() { [TaskTagKeys.WorkType] = WorkType.Business.ToString() },
                         Children = [
                             new TaskDto
@@ -41,6 +42,7 @@ public static class DemoProject
                             {
                                 Id = "1.1.2.10",
                                 Name = "BF-1. Frontend development",
+                                JiraKey = "DEMO-102",
                                 Limit = new TaskLimitDto
                                 {
                                     ResourceRole = "dev-fe",
@@ -64,13 +66,14 @@ public static class DemoProject
                     {
                         Id = "1.2",
                         Name = "Business feature 2",
+                        JiraKey = "DEMO-200",
                         Tags = new() { [TaskTagKeys.WorkType] = WorkType.Business.ToString() },
                         Children = [
                             new TaskDto
                             {
                                 Id = "1.2.1.10",
                                 Name = "BF-2. Backend development",
-                                JiraKey = "DEMO-102",
+                                JiraKey = "DEMO-201",
                                 Limit = new TaskLimitDto
                                 {
                                     Priority = 1,
@@ -95,12 +98,14 @@ public static class DemoProject
                     {
                         Id = "1.3",
                         Name = "Technical feature 1",
+                        JiraKey =  "DEMO-300",
                         Tags = new() { [TaskTagKeys.WorkType] = WorkType.Team.ToString() },
                         Children = [
                             new TaskDto
                             {
                                 Id = "1.3.2.10",
                                 Name = "TF-1. Frontend development",
+                                JiraKey = "DEMO-301",
                                 Limit = new TaskLimitDto
                                 {
                                     ResourceRole = "dev-fe",
@@ -124,12 +129,14 @@ public static class DemoProject
                     {
                         Id = "1.4",
                         Name = "Technical feature 2",
+                        JiraKey = "DEMO-400",
                         Tags = new() { [TaskTagKeys.WorkType] = WorkType.Team.ToString() },
                         Children = [
                             new TaskDto
                             {
                                 Id = "1.4.1.10",
                                 Name = "TF-2. Backend development",
+                                JiraKey = "DEMO-401",
                                 Limit = new TaskLimitDto
                                 {
                                     ResourceRole = "dev-be",
@@ -140,6 +147,7 @@ public static class DemoProject
                             {
                                 Id = "1.4.2.10",
                                 Name = "TF-2. Frontend development",
+                                JiraKey = "DEMO-402",
                                 Limit = new TaskLimitDto
                                 {
                                     ResourceRole = "dev-fe",
