@@ -1,9 +1,8 @@
 ﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using GantPlan.Dtos;
-using GantPlan.Dtos.OldVisualize;
 using GantPlan.Logic;
-using GantPlan.Mapping;
+using GantPlan.Visualize;
 using Newtonsoft.Json;
 using Planner.SourcePlans;
 
@@ -42,10 +41,8 @@ var jsonSettings = new JsonSerializerSettings
 var outputJson = JsonConvert.SerializeObject(project, jsonSettings);
 await File.WriteAllTextAsync("project.json", outputJson);
 
-var oldFormat = ProjectDtoMapper.MapToRootDto(project);
-
-var timelineContext = TimelineDataPreparer.Prepare(oldFormat);
-TimelineDataPreparer.GenerateHtml("Templates/timeline_template.html", "timeline.html", timelineContext);
+var treeContext = TaskTreeDataPreparer.Prepare(project);
+TaskTreeDataPreparer.GenerateHtml("Templates/task_tree_template.html", "timeline.html", treeContext);
 RevealFile("timeline.html");
 
 static void RevealFile(string fullPath)

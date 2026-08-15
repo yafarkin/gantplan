@@ -25,6 +25,7 @@ public sealed class SolverTests
             {
                 Id = "1",
                 Name = "simple task",
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
                 Limit = new TaskLimitDto
                 {
                     Duration = 5,
@@ -65,6 +66,7 @@ public sealed class SolverTests
             {
                 Id = "1",
                 Name = "complex task",
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
                 Children = [
                     new TaskDto
                     {
@@ -197,6 +199,7 @@ public sealed class SolverTests
             {
                 Id = "1",
                 Name = "complex task",
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
                 Children = [
                     new TaskDto
                     {
@@ -287,6 +290,7 @@ public sealed class SolverTests
             {
                 Id = "1",
                 Name = "complex task",
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
                 Children = [
                     new TaskDto
                     {
@@ -344,6 +348,7 @@ public sealed class SolverTests
             {
                 Id = "1",
                 Name = "complex task",
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
                 Children = [
                     new TaskDto
                     {

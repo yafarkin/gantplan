@@ -10,22 +10,27 @@ public static class DemoProject
         var project = new ProjectDto
         {
             ProjectStart = new DateOnly(2026, 1, 1),
+            BaseJiraUrl = "https://example.atlassian.net/browse/",
             RootTask = new TaskDto
             {
                 Id = "1",
                 Name = "Demo project",
+                // Обязательный тег (см. RequiredTaskTags) - выставлен один раз
+                // на корне и наследуется вниз всем задачам, у которых свой не задан.
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
                 Children =
                 [
                     new TaskDto
                     {
                         Id = "1.1",
                         Name = "Business feature 1",
-                        WorkType = WorkType.Business,
+                        Tags = new() { [TaskTagKeys.WorkType] = WorkType.Business.ToString() },
                         Children = [
                             new TaskDto
                             {
                                 Id = "1.1.1.10",
                                 Name = "BF-1. Backend development",
+                                JiraKey = "DEMO-101",
                                 Limit = new TaskLimitDto
                                 {
                                     ResourceRole = "dev-be",
@@ -59,12 +64,13 @@ public static class DemoProject
                     {
                         Id = "1.2",
                         Name = "Business feature 2",
-                        WorkType = WorkType.Business,
+                        Tags = new() { [TaskTagKeys.WorkType] = WorkType.Business.ToString() },
                         Children = [
                             new TaskDto
                             {
                                 Id = "1.2.1.10",
                                 Name = "BF-2. Backend development",
+                                JiraKey = "DEMO-102",
                                 Limit = new TaskLimitDto
                                 {
                                     Priority = 1,
@@ -89,7 +95,7 @@ public static class DemoProject
                     {
                         Id = "1.3",
                         Name = "Technical feature 1",
-                        WorkType = WorkType.Team,
+                        Tags = new() { [TaskTagKeys.WorkType] = WorkType.Team.ToString() },
                         Children = [
                             new TaskDto
                             {
@@ -118,7 +124,7 @@ public static class DemoProject
                     {
                         Id = "1.4",
                         Name = "Technical feature 2",
-                        WorkType = WorkType.Team,
+                        Tags = new() { [TaskTagKeys.WorkType] = WorkType.Team.ToString() },
                         Children = [
                             new TaskDto
                             {
