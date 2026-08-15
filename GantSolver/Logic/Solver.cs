@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using GantPlan.Dtos;
 using GantPlan.Dtos.Enums;
 using Google.OrTools.Sat;
@@ -475,12 +476,12 @@ public sealed class Solver
 
             foreach (var predecessorId in task.Limit!.PredecessorIds)
             {
-                var predecessor = _taskAlignment.FlattenTasksCopy[predecessorId];
-                if (predecessor is { Disabled: false, Fact.IsFinished: true })
-                {
-                    // task was completed, so we can ignore this constraint
-                    continue;
-                }
+                // PredecessorResolver уже вырезал из PredecessorIds всех
+                // Disabled/Paused/Finished предшественников (см.
+                // TaskAlignment/PredecessorResolver.cs) - у любого id,
+                // дошедшего сюда, гарантированно есть start/end в модели.
+                Debug.Assert(!_taskAlignment.FlattenTasksCopy[predecessorId].CanSkipTask,
+                    $"Predecessor {predecessorId} should have been filtered out by PredecessorResolver");
 
                 _model.Add(_starts[task.Id] >= _ends[predecessorId]);
             }

@@ -33,6 +33,7 @@ public sealed class NoTasksTests
             {
                 Id = "1",
                 Name = "root task",
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
                 Children = [
                     new TaskDto
                     {

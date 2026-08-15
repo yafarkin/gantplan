@@ -14,13 +14,16 @@ public static class DemoProject
             {
                 Id = "1",
                 Name = "Demo project",
+                // Обязательный тег (см. RequiredTaskTags) - выставлен один раз
+                // на корне и наследуется вниз всем задачам, у которых свой не задан.
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
                 Children =
                 [
                     new TaskDto
                     {
                         Id = "1.1",
                         Name = "Business feature 1",
-                        WorkType = WorkType.Business,
+                        Tags = new() { [TaskTagKeys.WorkType] = WorkType.Business.ToString() },
                         Children = [
                             new TaskDto
                             {
@@ -59,7 +62,7 @@ public static class DemoProject
                     {
                         Id = "1.2",
                         Name = "Business feature 2",
-                        WorkType = WorkType.Business,
+                        Tags = new() { [TaskTagKeys.WorkType] = WorkType.Business.ToString() },
                         Children = [
                             new TaskDto
                             {
@@ -89,7 +92,7 @@ public static class DemoProject
                     {
                         Id = "1.3",
                         Name = "Technical feature 1",
-                        WorkType = WorkType.Team,
+                        Tags = new() { [TaskTagKeys.WorkType] = WorkType.Team.ToString() },
                         Children = [
                             new TaskDto
                             {
@@ -118,7 +121,7 @@ public static class DemoProject
                     {
                         Id = "1.4",
                         Name = "Technical feature 2",
-                        WorkType = WorkType.Team,
+                        Tags = new() { [TaskTagKeys.WorkType] = WorkType.Team.ToString() },
                         Children = [
                             new TaskDto
                             {
