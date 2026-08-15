@@ -50,18 +50,6 @@
             background: #0056b3;
         }
 
-        .zoom-group {
-            display: inline-flex;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-
-        .zoom-group button {
-            border-radius: 0 !important;
-            min-width: 32px;
-        }
-
         /* ===== CHART =====
            Дерево и таймлайн - две независимые панели со своим скроллом,
            а не одна строка на flex со sticky-колонкой слева. Раньше
@@ -69,7 +57,7 @@
            горизонтальном скролле (известный класс багов Chrome, когда
            position:sticky не гарантированно перекрывает соседний контент,
            особенно с SVG-паттернами). С раздельными панелями это в
-           принципе невозможно - у списка задач нет горизontального
+           принципе невозможно - у списка задач нет горизонтального
            скролла и нечему "проезжать" под ним; синхронизируется только
            вертикальный скролл (см. #tree-panel/#timeline-panel .on('scroll')). */
         #chart-wrap {
@@ -122,15 +110,16 @@
             padding: 0;
         }
 
-        /* svg внутри строки не должен ужиматься flex-контейнером до ширины
-           панели - именно его "отказ ужиматься" заставляет строку (и вслед
-           за ней #timeline-panel) физически стать шире экрана, что и даёт
-           горизонтальный скролл. Без этого правила скролл пропадает: весь
-           таймлайн просто сжимается в видимую ширину, даты наезжают друг на
-           друга - ровно то, что осталось от .bar-col{flex:0 0 auto} в
-           прежней однопанельной вёрстке. */
-        #timeline-panel svg {
-            flex-shrink: 0;
+        /* Строки #timeline-panel (и линейка дат) должны быть РОВНО такой
+           ширины, как их SVG (весь таймлайн целиком, без зума - см.
+           PX_PER_DAY), а не ширины видимой панели - иначе SVG обрезается
+           собственным overflow:hidden строки раньше, чем докручен до конца
+           #timeline-panel, и кажется, что дальше "нет данных". width:
+           fit-content вместо жёсткого 100% как раз и даёт строке физически
+           стать такой же широкой, как её содержимое. */
+        #timeline-panel .header-row, #timeline-panel .tree-row {
+            width: fit-content;
+            min-width: 100%;
         }
 
         .tree-row.stripe {
@@ -261,6 +250,35 @@
             vertical-align: middle;
             border-radius: 2px;
         }
+
+        /* подпись задачи внутри бара - рисуется на каждом баре (см.
+           renderTaskBar), не только в свёрнутом ресурсе (дорожках Ганта):
+           слева в дереве название и так видно, но при горизонтальном
+           скролле timeline-панели далеко от начала бар - единственное,
+           откуда видно, что это за задача, и откуда можно перейти в Jira */
+        .gantt-bar-label {
+            fill: #fff;
+            font-size: 13px;
+            pointer-events: none;
+        }
+
+        /* подпись на узком баре (см. renderTaskBar) - меньше, чтобы влезло
+           больше текста, а не пропадала целиком */
+        .gantt-bar-label.small {
+            font-size: 10px;
+        }
+
+        /* задача со ссылкой на Jira - подчёркнута, как обычная ссылка, даже
+           внутри цветного бара, где нет привычного синего цвета текста */
+        .gantt-bar-label.linked {
+            text-decoration: underline;
+        }
+
+        /* бар задачи с Jira-ссылкой (см. renderTaskBar/barLink) - курсор
+           даёт понять, что по нему можно кликнуть, как и по бейджу слева */
+        #timeline-panel svg a {
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -271,13 +289,8 @@
         <button data-mode="tasks" id="view-tasks">По задачам</button>
     </div>
     <input id="search" placeholder="Поиск по номеру, названию или Jira-ключу" type="text">
-    <select id="assignee-filter">
-        <option value="">Все исполнители</option>
-    </select>
-    <div class="zoom-group">
-        <button id="zoom-out" title="Мельче - больше дней на экране">−</button>
-        <button id="zoom-in" title="Крупнее - подробнее по дням">+</button>
-    </div>
+    <input id="assignee-filter" list="assignee-list" placeholder="Исполнитель (можно часть слова, напр. dev)" type="text">
+    <datalist id="assignee-list"></datalist>
     <button id="expand-all">Развернуть всё</button>
     <button id="collapse-all">Свернуть всё</button>
     <button id="clear-filters">Сбросить фильтры</button>
@@ -313,13 +326,20 @@
     const factDateStr = {{fact_date}}; // "YYYY-MM-DD" дата среза "на сегодня" или null, если не задана
     /* -------------------------------------------------------------------------------- */
 
+    // высота обычной строки (одна задача - один бар) и строки дорожки
+    // Ганта (внутри свёрнутого ресурса, где на одной дорожке несколько
+    // баров подряд и подпись нужна прямо внутри бара - там теснее, поэтому
+    // строка вдвое выше).
     const ROW_HEIGHT = 24;
+    const LANE_ROW_HEIGHT = ROW_HEIGHT * 2;
 
-    // px на день - несколько фиксированных уровней масштаба; по умолчанию
-    // выбран так, чтобы на типичном экране помещалось 1.5-2 недели с
-    // дневной детализацией (а не весь проект целиком, сжатый до нечитаемости).
-    const ZOOM_LEVELS = [16, 24, 36, 55, 80, 120, 170];
-    let zoomIdx = 3;
+    // px на день - фиксированная величина, без зума. Зум убрали: смена
+    // масштаба заставляла пересчитывать scrollLeft, и на реальных данных
+    // это давало ощущение "дальше данные не рендерятся" при скролле вправо
+    // (см. также fit-content на #timeline-panel .tree-row выше - вторая
+    // часть той же истории). Один фиксированный масштаб проще и надёжнее;
+    // 55px/день - чтобы число дня спокойно помещалось в ленте дат сверху.
+    const PX_PER_DAY = 55;
 
     /* ===== DATE HELPERS ===== */
     function parseDate(str) {
@@ -360,18 +380,13 @@
     const maxDate = d3.max(allDates) || new Date();
     const todayDate = factDateStr ? parseDate(factDateStr) : null;
 
-    // ширина зоны с барами и масштаб зависят от текущего уровня зума -
-    // пересчитываются на каждый render(), а не фиксированы один раз.
-    let timelineWidth = 0;
-    let xScale = null;
-
-    function updateScale() {
-        const totalDays = Math.max(1, d3.timeDay.count(minDate, d3.timeDay.offset(maxDate, 1)));
-        timelineWidth = totalDays * ZOOM_LEVELS[zoomIdx];
-        xScale = d3.scaleTime()
-            .domain([minDate, d3.timeDay.offset(maxDate, 1)])
-            .range([0, timelineWidth]);
-    }
+    // ширина зоны с барами и масштаб - фиксированы (нет зума, см. PX_PER_DAY),
+    // считаются один раз для всего документа.
+    const totalDays = Math.max(1, d3.timeDay.count(minDate, d3.timeDay.offset(maxDate, 1)));
+    const timelineWidth = totalDays * PX_PER_DAY;
+    const xScale = d3.scaleTime()
+        .domain([minDate, d3.timeDay.offset(maxDate, 1)])
+        .range([0, timelineWidth]);
 
     // цвет - по ColorGroupId (задаётся бэкендом: id ближайшего предка на
     // глубине 1, то есть все подзадачи одной верхнеуровневой группы красятся
@@ -382,18 +397,20 @@
     /* ===== ASSIGNEE FILTER OPTIONS ===== */
     const assignees = Array.from(new Set([...nodeById.values()].map(n => n.Assignee).filter(Boolean))).sort();
     const hasUnassigned = [...nodeById.values()].some(n => n.Children.length === 0 && !n.Assignee);
+    const resourceNames = hasUnassigned ? [...assignees, 'Без исполнителя'] : assignees;
 
-    d3.select('#assignee-filter')
-        .selectAll('option.dyn')
+    d3.select('#assignee-list')
+        .selectAll('option')
         .data(assignees)
         .enter()
         .append('option')
-        .classed('dyn', true)
-        .attr('value', d => d)
-        .text(d => d);
+        .attr('value', d => d);
 
-    /* ===== VIEW: "по исполнителям" (дерево каждого исполнителя - те же
-       эпики/группы, что и в общем дереве, но обрезанные до его задач) или
+    /* ===== VIEW: "по исполнителям" (по умолчанию - трек на человека,
+       ресурсы свёрнуты: видно диаграмму Ганта, где внутри трека - его
+       задачи, упакованные по дорожкам; разворачивание конкретного
+       человека "расхлопывает" трек в дерево его эпиков/задач - те же
+       узлы, что и в общем дереве, просто обрезанные до этого человека) или
        "по задачам" (дерево целиком). Оба режима рисуются одной и той же
        renderRow/markVisible логикой - "по исполнителям" просто подсовывает
        на верхнем уровне синтетические узлы-заголовки людей, дальше внутри -
@@ -405,9 +422,7 @@
     }
 
     function buildResourceRoots() {
-        const names = hasUnassigned ? [...assignees, 'Без исполнителя'] : assignees;
-
-        return names
+        return resourceNames
             .map(name => {
                 const wanted = name === 'Без исполнителя' ? null : name;
                 const children = treeData.Children
@@ -431,23 +446,70 @@
     // узел, если это лист этого исполнителя; null, если внутри поддерева
     // вообще нет его задач) - так "по исполнителям" показывает те же эпики
     // и группы, что и общее дерево, просто отфильтрованные по человеку.
+    // _start/_end группового узла тоже пересчитываются заново по обрезанным
+    // детям (а не наследуются от исходного узла) - иначе бар эпика в
+    // развёрнутом ресурсе показывал бы срок ВСЕГО эпика по проекту (включая
+    // работу других людей над ним), а не только срок задач этого человека,
+    // и выглядело бы как несуществующее наложение работ по времени.
     function pruneForAssignee(node, assignee) {
         if (node.Children.length === 0) {
             return node.Assignee === assignee ? node : null;
         }
         const prunedChildren = node.Children.map(c => pruneForAssignee(c, assignee)).filter(Boolean);
-        return prunedChildren.length === 0 ? null : {...node, Children: prunedChildren};
+        if (prunedChildren.length === 0) return null;
+
+        const starts = prunedChildren.map(c => c._start).filter(Boolean);
+        const ends = prunedChildren.map(c => c._end).filter(Boolean);
+        return {
+            ...node,
+            Children: prunedChildren,
+            _start: starts.length ? d3.min(starts) : null,
+            _end: ends.length ? d3.max(ends) : null
+        };
+    }
+
+    // Собирает листовые задачи (с датами) из поддерева узла - используется,
+    // когда ресурс свёрнут, чтобы получить плоский список его задач для
+    // упаковки по дорожкам Ганта (см. packLanes/renderGanttLanes).
+    function collectLeaves(node, out = []) {
+        if (node.Children.length === 0) {
+            if (node._start && node._end) out.push(node);
+        } else {
+            node.Children.forEach(c => collectLeaves(c, out));
+        }
+        return out;
+    }
+
+    // Жадная упаковка: задача кладётся в первую дорожку, где предыдущая
+    // задача уже закончилась к её началу; если такой дорожки нет -
+    // открывается новая. Конец задачи трактуется как эксклюзивный (день End
+    // ещё считается занятым), как и везде в renderTaskBar/renderTimelineRuler.
+    function packLanes(tasksSortedByStart) {
+        const lanes = [];
+        tasksSortedByStart.forEach(t => {
+            const lane = lanes.find(l => {
+                const last = l[l.length - 1];
+                return t._start >= d3.timeDay.offset(last._end, 1);
+            });
+            if (lane) lane.push(t); else lanes.push([t]);
+        });
+        return lanes;
     }
 
     /* ===== EXPAND STATE =====
        Список "свёрнутых" id, а не "развёрнутых" - так по умолчанию (пока
-       id нет в списке) всё развёрнуто, включая узлы режима "по
-       исполнителям", которые появляются только при переключении и не
-       могли бы попасть в whitelist заранее. Id задач общие для обоих
-       режимов, так что свернуть/развернуть конкретный эпик - это на самом
-       деле разовое решение "мне сейчас не интересны детали X", а не
-       настройка каждого режима по отдельности. */
+       id нет в списке) всё развёрнуто. Id задач общие для обоих режимов,
+       так что свернуть/развернуть конкретный эпик - это на самом деле
+       разовое решение "мне сейчас не интересны детали X", а не настройка
+       каждого режима по отдельности. */
     const collapsedIds = new Set();
+
+    // Единственное исключение из "по умолчанию развёрнуто" - сами ресурсы:
+    // они стартуют свёрнутыми, чтобы сразу открывалась диаграмма Ганта
+    // (трек на человека), а не длинный плоский список всех задач всех
+    // людей. Разворачивание конкретного ресурса - осознанное действие
+    // пользователя, а не состояние по умолчанию.
+    resourceNames.forEach(name => collapsedIds.add(`@resource@${name}`));
 
     function isExpanded(node) {
         return !collapsedIds.has(node.Id);
@@ -459,7 +521,8 @@
             node.Name.toLowerCase().includes(query) ||
             (!node._isGroupHeader && node.Id.toLowerCase().includes(query)) ||
             (node.JiraKey && node.JiraKey.toLowerCase().includes(query));
-        const matchesAssignee = !assignee || node.Assignee === assignee;
+        const matchesAssignee = !assignee ||
+            (node.Assignee && node.Assignee.toLowerCase().includes(assignee.toLowerCase()));
         return matchesQuery && matchesAssignee;
     }
 
@@ -513,22 +576,20 @@
             .attr('height', 22)
             .attr('fill', 'url(#hatch-global)');
 
-        // подписи дат: по дню - но не полной датой (она физически не
-        // помещается в 55px на день и наезжает на соседей), а только числом;
-        // полная дата - лишь в начале месяца и на самом первом дне, чтобы
-        // не потерять ориентир, к какому месяцу/году относятся числа рядом.
-        // Если и число не помещается (сильно уменьшили масштаб) - подписи
-        // только по неделям (Пн), полной датой.
-        const dayNum = d3.timeFormat('%d');
-        const tickDates = ZOOM_LEVELS[zoomIdx] >= 18 ? days : d3.timeMonday.range(minDate, d3.timeDay.offset(maxDate, 1));
+        // подписи дат: день.месяц (не просто число) - чтобы переход между
+        // месяцами был виден сразу по подписи, а не только по вертикальной
+        // линии начала недели; полный год - лишь в начале месяца и на самом
+        // первом дне, чтобы не потерять ориентир, к какому году относятся
+        // числа рядом.
+        const dayMonth = d3.timeFormat('%d.%m');
         svg.selectAll('text.tick')
-            .data(tickDates)
+            .data(days)
             .enter().append('text')
             .attr('x', d => xScale(d) + 3)
             .attr('y', 15)
             .attr('fill', '#fff')
             .attr('font-size', 11)
-            .text(d => (ZOOM_LEVELS[zoomIdx] < 18 || d.getDate() === 1 || +d === +minDate) ? fmtDate(d) : dayNum(d));
+            .text(d => (d.getDate() === 1 || +d === +minDate) ? fmtDate(d) : dayMonth(d));
 
         svg.selectAll('line.week')
             .data(d3.timeMonday.range(minDate, d3.timeDay.offset(maxDate, 1)))
@@ -547,31 +608,77 @@
 
     /* ===== RENDER: полоска задачи (фон нерабочих дней + сам бар + штриховка) =====
        Фон нерабочих дней рисуется на всю ширину строки независимо от
-       наличия бара - так видно выходные и там, где задачи нет, как раньше
-       было видно в посуточной сетке по дням. */
-    function renderBarCell(barCol, node) {
-        const svg = barCol.append('svg').attr('width', timelineWidth).attr('height', ROW_HEIGHT);
-
+       наличия бара - так видно выходные и там, где задачи нет. Вынесено
+       отдельно от бара, т.к. на дорожке Ганта (свёрнутый ресурс) на одном
+       фоне рисуется несколько баров подряд, а не один. rowHeight передаётся
+       явно - обычная строка (ROW_HEIGHT) и строка дорожки Ганта
+       (LANE_ROW_HEIGHT) разной высоты. */
+    function renderRowBackground(svg, rowHeight) {
         d3.timeDay.range(minDate, d3.timeDay.offset(maxDate, 1))
             .filter(d => isWeekend(d) || globalHolidaySet.has(ymdLocal(d)))
             .forEach(d => {
                 svg.append('rect')
                     .attr('x', xScale(d)).attr('y', 1)
                     .attr('width', Math.max(1, xScale(d3.timeDay.offset(d, 1)) - xScale(d)))
-                    .attr('height', ROW_HEIGHT - 2)
-                    .attr('fill', 'url(#hatch-global)');
+                    .attr('height', rowHeight - 2)
+                    .attr('fill', 'url(#hatch-global)')
+                    .attr('pointer-events', 'none');
             });
+    }
 
-        if (!node._start || !node._end) return;
-
+    // muted - приглушить бар (задача уже завершена/на паузе), не убирая его.
+    function renderTaskBar(svg, node, {muted = false, rowHeight = ROW_HEIGHT} = {}) {
         const x0 = xScale(node._start), x1 = xScale(d3.timeDay.offset(node._end, 1));
-        svg.append('rect')
+        const width = Math.max(2, x1 - x0);
+        const hasLink = !!node.JiraUrl;
+
+        // если у задачи есть ссылка на Jira - сам бар (и его подпись) кликабельны,
+        // а не только бейдж слева в дереве; штриховка нерабочих дней поверх бара
+        // в ссылку не заворачивается, она чисто декоративная.
+        const barLink = hasLink
+            ? svg.append('a').attr('href', node.JiraUrl).attr('target', '_blank').attr('rel', 'noopener')
+            : svg;
+
+        barLink.append('rect')
             .attr('x', x0).attr('y', 3)
-            .attr('width', Math.max(2, x1 - x0)).attr('height', ROW_HEIGHT - 6)
+            .attr('width', width).attr('height', rowHeight - 6)
             .attr('rx', 3)
             .attr('fill', colorScale(node.ColorGroupId))
+            .attr('opacity', muted ? .4 : 1)
             .append('title')
             .text(barTooltip(node));
+
+        // подпись рисуется на каждом баре, а не только на плотных дорожках
+        // Ганта: слева в дереве название и так видно, но при горизонтальном
+        // скролле timeline-панели далеко от начала бар остаётся единственным
+        // способом понять, что это за задача, и единственным местом, откуда
+        // можно перейти в Jira, не прокручивая обратно. Не прячем подпись
+        // целиком из-за нехватки места (на плотной дорожке из многих коротких
+        // задач это превращало её в "кучу безымянных полосок") - на узких
+        // барах просто уменьшаем шрифт, а затем обрезаем посимвольно, пока не
+        // влезет (аналог text-overflow:ellipsis, но для SVG-текста, который
+        // его не поддерживает). Если есть ссылка на Jira - подпись начинается
+        // с ключа задачи в квадратных скобках и подчёркивается, чтобы сразу
+        // было видно и номер задачи, и то, что это ссылка.
+        const labelClasses = ['gantt-bar-label'];
+        if (hasLink) labelClasses.push('linked');
+        if (width < 70) labelClasses.push('small');
+
+        const label = barLink.append('text')
+            .attr('x', x0 + 6).attr('y', rowHeight / 2 + 4)
+            .attr('class', labelClasses.join(' '))
+            .attr('opacity', muted ? .6 : 1)
+            .text(hasLink ? `[${node.JiraKey}] ${node.Name}` : node.Name);
+
+        const el = label.node();
+        while (el.getComputedTextLength() > width - 10 && label.text().length > 1) {
+            label.text(label.text().slice(0, -1));
+        }
+        // совсем крошечный бар (меньше одного символа даже мелким шрифтом) -
+        // показать нечего, подпись только мешала бы
+        if (el.getComputedTextLength() > width - 10) {
+            label.remove();
+        }
 
         // штриховка поверх бара: свой угол для общих нерабочих дней и
         // зеркальный - для личных (отпуск и т.п. у конкретного исполнителя);
@@ -583,26 +690,71 @@
             const personal = !!personalSet && personalSet.has(key);
             if (!global && !personal) return;
 
+            // pointer-events:none - штриховка чисто декоративная и рисуется
+            // поверх бара (в т.ч. поверх ссылки на Jira); без этого клик по
+            // заштрихованной части бара не долетал до <a> под ней - ссылку
+            // получалось открыть только через свободный от штриховки участок.
             const x = xScale(d), w = Math.max(1, xScale(d3.timeDay.offset(d, 1)) - x);
             if (global) {
-                svg.append('rect').attr('x', x).attr('y', 3).attr('width', w).attr('height', ROW_HEIGHT - 6).attr('fill', 'url(#hatch-global)');
+                svg.append('rect').attr('x', x).attr('y', 3).attr('width', w).attr('height', rowHeight - 6).attr('fill', 'url(#hatch-global)').attr('pointer-events', 'none');
             }
             if (personal) {
-                svg.append('rect').attr('x', x).attr('y', 3).attr('width', w).attr('height', ROW_HEIGHT - 6).attr('fill', 'url(#hatch-personal)');
+                svg.append('rect').attr('x', x).attr('y', 3).attr('width', w).attr('height', rowHeight - 6).attr('fill', 'url(#hatch-personal)').attr('pointer-events', 'none');
             }
+        });
+    }
+
+    function renderBarCell(barCol, node) {
+        const svg = barCol.append('svg').attr('width', timelineWidth).attr('height', ROW_HEIGHT);
+        renderRowBackground(svg, ROW_HEIGHT);
+        if (node._start && node._end) renderTaskBar(svg, node);
+    }
+
+    /* ===== RENDER: строки дорожек Ганта (свёрнутый ресурс) =====
+       По одной строке на дорожку, с несколькими барами подряд внутри её
+       svg. Строки-заглушки в #tree-panel нужны только для сохранения пары
+       "1 строка = 1 data-row в обеих панелях" (синхронизация скролла и
+       hover работают по этому индексу). */
+    function renderGanttLanes(lanes) {
+        lanes.forEach(lane => {
+            const laneIdx = rowIndex++;
+            const laneClass = 'tree-row' + (laneIdx % 2 === 1 ? ' stripe' : '');
+
+            d3.select('#tree-panel').append('div')
+                .attr('class', laneClass).attr('data-row', laneIdx)
+                .style('height', `${LANE_ROW_HEIGHT}px`)
+                .on('mouseenter', () => setRowHover(laneIdx, true))
+                .on('mouseleave', () => setRowHover(laneIdx, false));
+
+            const laneRow = d3.select('#timeline-panel').append('div')
+                .attr('class', laneClass).attr('data-row', laneIdx)
+                .style('height', `${LANE_ROW_HEIGHT}px`)
+                .on('mouseenter', () => setRowHover(laneIdx, true))
+                .on('mouseleave', () => setRowHover(laneIdx, false));
+            const svg = laneRow.append('svg').attr('width', timelineWidth).attr('height', LANE_ROW_HEIGHT);
+            renderRowBackground(svg, LANE_ROW_HEIGHT);
+            lane.forEach(t => {
+                renderTaskBar(svg, t, {muted: !!t.StatusLabel, rowHeight: LANE_ROW_HEIGHT});
+            });
         });
     }
 
     /* ===== RENDER: ONE TASK ROW =====
        Рисует пару синхронизированных строк - в #tree-panel (название) и в
        #timeline-panel (полоска) - с общим data-row-индексом: по нему же
-       синхронизируется hover между панелями (см. wireHoverSync) и чередование
+       синхронизируется hover между панелями (см. setRowHover) и чередование
        фона (через явный класс "stripe", а не nth-child - линейка дат и
        заголовок теперь в отдельной панели, так что nth-child по факту тоже
        был бы неверным индексом).
        depth передаётся явно, а не берётся из поля узла: в режиме "по
        исполнителям" одни и те же узлы-задачи оказываются на другой
-       глубине, чем в дереве целиком. */
+       глубине, чем в дереве целиком.
+       Если node - заголовок ресурса (_isGroupHeader) и он сейчас свёрнут -
+       вместо его детей рисуются не строки дерева, а дорожки Ганта,
+       собранные из ВСЕХ листовых задач этого человека (см. collectLeaves/
+       renderGanttLanes) - так "расхлопывание" ресурса не теряет ни одной
+       задачи, просто меняет её представление с бара на дорожке на
+       собственную строку дерева. */
     let rowIndex = 0;
 
     function renderRow(node, query, depth) {
@@ -610,6 +762,10 @@
 
         const idx = rowIndex++;
         const rowClass = 'tree-row' + (idx % 2 === 1 ? ' stripe' : '') + (node.StatusLabel ? ' muted' : '');
+
+        const collapsedGanttLanes = (node._isGroupHeader && !isExpanded(node))
+            ? packLanes(collectLeaves(node).filter(n => n._visible).sort((a, b) => a._start - b._start))
+            : null;
 
         const label = d3.select('#tree-panel').append('div')
             .attr('class', rowClass)
@@ -658,16 +814,48 @@
         if (node.StatusLabel) {
             badges.append('span').attr('class', 'status-badge').text(node.StatusLabel);
         }
+        // свёрнутый ресурс - вместо статуса показываем сводку по тому, что
+        // скрыто под свёрнутым треком (сама первая дорожка рисуется прямо в
+        // этой же строке, см. ниже - "дорожки" тут не считаем: у ресурса их
+        // почти всегда одна, лишняя цифра только путает).
+        if (collapsedGanttLanes) {
+            const taskCount = collapsedGanttLanes.reduce((n, l) => n + l.length, 0);
+            badges.append('span').attr('class', 'assignee-badge').text(`${taskCount} задач`);
+        }
+
+        // Высота строки заголовка ресурса подстраивается под дорожку Ганта,
+        // когда та встроена прямо в эту же строку (см. ниже) - иначе имя
+        // висит над отдельной пустой строкой, а сами бары начинаются только
+        // на следующей.
+        const headerRowHeight = collapsedGanttLanes ? LANE_ROW_HEIGHT : ROW_HEIGHT;
+        if (collapsedGanttLanes) {
+            label.style('height', `${headerRowHeight}px`);
+        }
 
         const barRow = d3.select('#timeline-panel').append('div')
             .attr('class', rowClass)
             .attr('data-row', idx)
             .on('mouseenter', () => setRowHover(idx, true))
             .on('mouseleave', () => setRowHover(idx, false));
-        renderBarCell(barRow, node);
+
+        if (collapsedGanttLanes) {
+            // первая дорожка - прямо в строке с именем ресурса, а не на
+            // отдельной строке ниже; остальные дорожки (если задачи
+            // пересекаются по датам) идут своими строками через renderGanttLanes.
+            barRow.style('height', `${headerRowHeight}px`);
+            const svg = barRow.append('svg').attr('width', timelineWidth).attr('height', headerRowHeight);
+            renderRowBackground(svg, headerRowHeight);
+            (collapsedGanttLanes[0] || []).forEach(t => {
+                renderTaskBar(svg, t, {muted: !!t.StatusLabel, rowHeight: headerRowHeight});
+            });
+        } else {
+            renderBarCell(barRow, node);
+        }
 
         if (hasChildren && isExpanded(node)) {
             node.Children.forEach(c => renderRow(c, query, depth + 1));
+        } else if (collapsedGanttLanes && collapsedGanttLanes.length > 1) {
+            renderGanttLanes(collapsedGanttLanes.slice(1));
         }
     }
 
@@ -678,18 +866,18 @@
 
     /* ===== MAIN RENDER ===== */
     function render() {
-        updateScale();
         rowIndex = 0;
 
         const query = d3.select('#search').property('value').trim().toLowerCase();
-        const assignee = d3.select('#assignee-filter').property('value');
-        const roots = getRoots();
-        const anyVisible = roots.map(r => markVisible(r, query, assignee, false)).some(Boolean);
+        const assignee = d3.select('#assignee-filter').property('value').trim();
 
         d3.select('#tree-panel').html('');
         d3.select('#timeline-panel').html('');
         renderTreeHeader();
         renderTimelineRuler();
+
+        const roots = getRoots();
+        const anyVisible = roots.map(r => markVisible(r, query, assignee, false)).some(Boolean);
 
         if (!anyVisible) {
             d3.select('#tree-panel').append('div').attr('class', 'empty-message').text('Ничего не найдено');
@@ -708,26 +896,7 @@
 
     /* ===== CONTROLS ===== */
     d3.select('#search').on('input', render);
-    d3.select('#assignee-filter').on('change', render);
-    d3.select('#zoom-in').on('click', () => zoomTo(Math.min(zoomIdx + 1, ZOOM_LEVELS.length - 1)));
-    d3.select('#zoom-out').on('click', () => zoomTo(Math.max(zoomIdx - 1, 0)));
-
-    // Смена zoomIdx меняет px/день, а значит и смысл текущего scrollLeft
-    // (те же самые пиксели после этого указывают на совсем другую дату) -
-    // "прокрутка после зума куда-то уезжает", если этого не компенсировать.
-    // Поэтому запоминаем дату, которая сейчас в центре видимой области, по
-    // СТАРОЙ шкале - и после пересчёта шкалы возвращаем именно её в центр.
-    function zoomTo(newZoomIdx) {
-        if (newZoomIdx === zoomIdx) return;
-
-        const timelinePanel = document.getElementById('timeline-panel');
-        const centerDate = xScale.invert(timelinePanel.scrollLeft + timelinePanel.clientWidth / 2);
-
-        zoomIdx = newZoomIdx;
-        render();
-
-        timelinePanel.scrollLeft = xScale(centerDate) - timelinePanel.clientWidth / 2;
-    }
+    d3.select('#assignee-filter').on('input', render);
     d3.select('#expand-all').on('click', () => { setAllExpanded(true); render(); });
     d3.select('#collapse-all').on('click', () => { setAllExpanded(false); render(); });
     d3.select('#clear-filters').on('click', () => {
