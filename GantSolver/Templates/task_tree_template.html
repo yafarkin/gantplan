@@ -50,37 +50,99 @@
             background: #0056b3;
         }
 
-        /* ===== CHART ===== */
-        #chart {
-            overflow: auto;
+        .zoom-group {
+            display: inline-flex;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .zoom-group button {
+            border-radius: 0 !important;
+            min-width: 32px;
+        }
+
+        /* ===== CHART =====
+           Дерево и таймлайн - две независимые панели со своим скроллом,
+           а не одна строка на flex со sticky-колонкой слева. Раньше
+           штриховка/бары временами проступали поверх названий задач при
+           горизонтальном скролле (известный класс багов Chrome, когда
+           position:sticky не гарантированно перекрывает соседний контент,
+           особенно с SVG-паттернами). С раздельными панелями это в
+           принципе невозможно - у списка задач нет горизontального
+           скролла и нечему "проезжать" под ним; синхронизируется только
+           вертикальный скролл (см. #tree-panel/#timeline-panel .on('scroll')). */
+        #chart-wrap {
+            display: flex;
             border: 1px solid #dee2e6;
             border-radius: 4px;
             background: #fff;
             max-height: 78vh;
         }
 
-        .ruler-row, .tree-row {
-            display: flex;
-            align-items: center;
-            border-bottom: 1px solid #eee;
-            white-space: nowrap;
+        #tree-panel {
+            flex: 0 0 520px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            border-right: 1px solid #dee2e6;
         }
 
-        .ruler-row {
+        #timeline-panel {
+            flex: 1 1 auto;
+            overflow: auto;
+        }
+
+        .header-row {
             position: sticky;
             top: 0;
             z-index: 5;
-            background: #343a40;
-            color: #fff;
-        }
-
-        .tree-col {
-            flex: 0 0 520px;
-            padding: 4px 8px;
-            box-sizing: border-box;
+            height: 22px;
             display: flex;
             align-items: center;
+            padding: 0 8px;
+            box-sizing: border-box;
+            background: #343a40;
+            color: #fff;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .tree-row {
+            height: 24px;
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+            box-sizing: border-box;
+            border-bottom: 1px solid #eee;
+            white-space: nowrap;
             overflow: hidden;
+        }
+
+        #timeline-panel .tree-row {
+            padding: 0;
+        }
+
+        /* svg внутри строки не должен ужиматься flex-контейнером до ширины
+           панели - именно его "отказ ужиматься" заставляет строку (и вслед
+           за ней #timeline-panel) физически стать шире экрана, что и даёт
+           горизонтальный скролл. Без этого правила скролл пропадает: весь
+           таймлайн просто сжимается в видимую ширину, даты наезжают друг на
+           друга - ровно то, что осталось от .bar-col{flex:0 0 auto} в
+           прежней однопанельной вёрстке. */
+        #timeline-panel svg {
+            flex-shrink: 0;
+        }
+
+        .tree-row.stripe {
+            background: #f8f9fa;
+        }
+
+        .tree-row.hover {
+            background: #eef4ff;
+        }
+
+        .tree-row.muted {
+            opacity: .55;
         }
 
         /* только название задачи обрезается многоточием - бейджи (Jira,
@@ -97,23 +159,6 @@
         .badges {
             flex: 0 0 auto;
             white-space: nowrap;
-        }
-
-        .bar-col {
-            flex: 0 0 auto;
-            padding: 3px 0;
-        }
-
-        .tree-row:nth-child(even) {
-            background: #f8f9fa;
-        }
-
-        .tree-row:hover {
-            background: #eef4ff;
-        }
-
-        .tree-row.muted {
-            opacity: .55;
         }
 
         .caret {
@@ -154,6 +199,13 @@
         span.jira-badge {
             background: #eee;
             color: #6c757d;
+        }
+
+        /* родительский эпик - визуально приглушённее собственной метки задачи */
+        .jira-badge.epic-badge {
+            background: #f1f3f5;
+            color: #495057;
+            border: 1px solid #dee2e6;
         }
 
         .assignee-badge {
@@ -199,15 +251,15 @@
             margin-bottom: 10px;
             font-size: 12px;
             color: #6c757d;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
         }
 
-        .legend .swatch {
-            display: inline-block;
-            width: 28px;
-            height: 10px;
+        .legend svg {
             vertical-align: middle;
             border-radius: 2px;
-            background: linear-gradient(90deg, #1f77b4 0 35%, rgba(255,255,255,.55) 35% 65%, #1f77b4 65% 100%);
         }
     </style>
 </head>
@@ -215,29 +267,59 @@
 <h2>Дерево задач</h2>
 <div class="controls">
     <div class="view-switch">
-        <button data-mode="tasks" id="view-tasks">По задачам</button>
         <button data-mode="resources" id="view-resources">По исполнителям</button>
+        <button data-mode="tasks" id="view-tasks">По задачам</button>
     </div>
-    <input id="search" placeholder="Поиск по номеру или названию задачи" type="text">
+    <input id="search" placeholder="Поиск по номеру, названию или Jira-ключу" type="text">
     <select id="assignee-filter">
         <option value="">Все исполнители</option>
     </select>
+    <div class="zoom-group">
+        <button id="zoom-out" title="Мельче - больше дней на экране">−</button>
+        <button id="zoom-in" title="Крупнее - подробнее по дням">+</button>
+    </div>
     <button id="expand-all">Развернуть всё</button>
     <button id="collapse-all">Свернуть всё</button>
     <button id="clear-filters">Сбросить фильтры</button>
+    <button id="goto-today" style="display: none;">На сегодня</button>
 </div>
-<div class="legend"><span class="swatch"></span> светлый участок полоски - нерабочий день исполнителя (выходной/праздник/отпуск), тёмный - рабочий</div>
-<div id="chart"></div>
+<div class="legend">
+    <svg height="12" width="24"><rect fill="url(#hatch-global)" height="12" width="24"></rect></svg>
+    общий нерабочий день (выходной/праздник) - штрихуется вся строка;
+    <svg height="12" width="24"><rect fill="#1f77b4" height="12" width="24"></rect><rect fill="url(#hatch-personal)" height="12" width="24"></rect></svg>
+    личный нерабочий день исполнителя (отпуск и т.п.) - штрихуется зеркальным узором только сама задача; если день и общий, и личный - штрихуются оба узора сразу
+</div>
+<svg height="0" style="position: absolute; width: 0;">
+    <defs>
+        <pattern height="6" id="hatch-global" patternTransform="rotate(45)" patternUnits="userSpaceOnUse" width="6">
+            <rect fill="rgba(0,0,0,.05)" height="6" width="6"></rect>
+            <line stroke="rgba(0,0,0,.3)" stroke-width="2" x1="0" x2="0" y1="0" y2="6"></line>
+        </pattern>
+        <pattern height="6" id="hatch-personal" patternTransform="rotate(-45)" patternUnits="userSpaceOnUse" width="6">
+            <line stroke="rgba(255,255,255,.85)" stroke-width="2" x1="0" x2="0" y1="0" y2="6"></line>
+        </pattern>
+    </defs>
+</svg>
+<div id="chart-wrap">
+    <div id="tree-panel"></div>
+    <div id="timeline-panel"></div>
+</div>
 
 <script>
     /* -------------------- placeholders, подставляются бэкендом -------------------- */
     const treeData = {{TreeData}};
     const globalNonWorking = {{global_non_working}};
     const resourceNonWorking = {{resource_non_working}};
+    const factDateStr = {{fact_date}}; // "YYYY-MM-DD" дата среза "на сегодня" или null, если не задана
     /* -------------------------------------------------------------------------------- */
 
-    const TIMELINE_WIDTH = 900; // px - ширина зоны с барами, общая для линейки и всех строк
     const ROW_HEIGHT = 24;
+
+    // px на день - несколько фиксированных уровней масштаба; по умолчанию
+    // выбран так, чтобы на типичном экране помещалось 1.5-2 недели с
+    // дневной детализацией (а не весь проект целиком, сжатый до нечитаемости).
+    const ZOOM_LEVELS = [16, 24, 36, 55, 80, 120, 170];
+    let zoomIdx = 3;
 
     /* ===== DATE HELPERS ===== */
     function parseDate(str) {
@@ -257,18 +339,11 @@
 
     const globalHolidaySet = new Set(globalNonWorking);
 
-    function isNonWork(d, assignee) {
-        if (isWeekend(d) || globalHolidaySet.has(ymdLocal(d))) return true;
-        const own = resourceNonWorking[assignee];
-        return !!own && own.includes(ymdLocal(d));
-    }
-
-    /* ===== INDEX THE TREE (даты, глубина, ссылка на родителя) ===== */
+    /* ===== INDEX THE TREE (даты, множество задач по id) ===== */
     const nodeById = new Map();
     const allDates = [];
 
-    (function index(node, depth) {
-        node._depth = depth;
+    (function index(node) {
         if (node.Start) {
             node._start = parseDate(node.Start);
             allDates.push(node._start);
@@ -278,14 +353,25 @@
             allDates.push(node._end);
         }
         nodeById.set(node.Id, node);
-        node.Children.forEach(c => index(c, depth + 1));
-    })(treeData, 0);
+        node.Children.forEach(index);
+    })(treeData);
 
     const minDate = d3.min(allDates) || new Date();
     const maxDate = d3.max(allDates) || new Date();
-    const xScale = d3.scaleTime()
-        .domain([minDate, d3.timeDay.offset(maxDate, 1)])
-        .range([0, TIMELINE_WIDTH]);
+    const todayDate = factDateStr ? parseDate(factDateStr) : null;
+
+    // ширина зоны с барами и масштаб зависят от текущего уровня зума -
+    // пересчитываются на каждый render(), а не фиксированы один раз.
+    let timelineWidth = 0;
+    let xScale = null;
+
+    function updateScale() {
+        const totalDays = Math.max(1, d3.timeDay.count(minDate, d3.timeDay.offset(maxDate, 1)));
+        timelineWidth = totalDays * ZOOM_LEVELS[zoomIdx];
+        xScale = d3.scaleTime()
+            .domain([minDate, d3.timeDay.offset(maxDate, 1)])
+            .range([0, timelineWidth]);
+    }
 
     // цвет - по ColorGroupId (задаётся бэкендом: id ближайшего предка на
     // глубине 1, то есть все подзадачи одной верхнеуровневой группы красятся
@@ -295,6 +381,8 @@
 
     /* ===== ASSIGNEE FILTER OPTIONS ===== */
     const assignees = Array.from(new Set([...nodeById.values()].map(n => n.Assignee).filter(Boolean))).sort();
+    const hasUnassigned = [...nodeById.values()].some(n => n.Children.length === 0 && !n.Assignee);
+
     d3.select('#assignee-filter')
         .selectAll('option.dyn')
         .data(assignees)
@@ -304,42 +392,61 @@
         .attr('value', d => d)
         .text(d => d);
 
-    /* ===== VIEW: "по задачам" (дерево как есть) или "по исполнителям"
-       (плоский список задач под каждым исполнителем). Оба режима рисуются
-       одной и той же renderRow/markVisible логикой - "по исполнителям"
-       просто подсовывает синтетические узлы-заголовки вместо настоящего
-       дерева, собранные из тех же самых листьев (см. buildResourceRoots). */
-    let viewMode = 'tasks';
+    /* ===== VIEW: "по исполнителям" (дерево каждого исполнителя - те же
+       эпики/группы, что и в общем дереве, но обрезанные до его задач) или
+       "по задачам" (дерево целиком). Оба режима рисуются одной и той же
+       renderRow/markVisible логикой - "по исполнителям" просто подсовывает
+       на верхнем уровне синтетические узлы-заголовки людей, дальше внутри -
+       настоящие узлы дерева (см. buildResourceRoots/pruneForAssignee). */
+    let viewMode = 'resources';
 
     function getRoots() {
         return viewMode === 'tasks' ? [treeData] : buildResourceRoots();
     }
 
     function buildResourceRoots() {
-        const leaves = [];
-        (function collect(node) {
-            if (node.Children.length === 0) leaves.push(node);
-            else node.Children.forEach(collect);
-        })(treeData);
+        const names = hasUnassigned ? [...assignees, 'Без исполнителя'] : assignees;
 
-        const byAssignee = d3.group(leaves, l => l.Assignee || 'Без исполнителя');
+        return names
+            .map(name => {
+                const wanted = name === 'Без исполнителя' ? null : name;
+                const children = treeData.Children
+                    .map(c => pruneForAssignee(c, wanted))
+                    .filter(Boolean);
 
-        return Array.from(byAssignee, ([assignee, tasks]) => ({
-            Id: `@resource@${assignee}`,
-            Name: assignee,
-            JiraKey: null, JiraUrl: null, Assignee: null,
-            Start: null, End: null, StatusLabel: null,
-            ColorGroupId: assignee,
-            _isGroupHeader: true,
-            Children: tasks.slice().sort((a, b) => (a.Start || '').localeCompare(b.Start || ''))
-        })).sort((a, b) => a.Name.localeCompare(b.Name));
+                return children.length === 0 ? null : {
+                    Id: `@resource@${name}`,
+                    Name: name,
+                    JiraKey: null, JiraUrl: null, EpicJiraKey: null, EpicJiraUrl: null, Assignee: null,
+                    Start: null, End: null, StatusLabel: null,
+                    ColorGroupId: name,
+                    _isGroupHeader: true,
+                    Children: children
+                };
+            })
+            .filter(Boolean);
+    }
+
+    // Возвращает узел с урезанными до нужного исполнителя потомками (сам
+    // узел, если это лист этого исполнителя; null, если внутри поддерева
+    // вообще нет его задач) - так "по исполнителям" показывает те же эпики
+    // и группы, что и общее дерево, просто отфильтрованные по человеку.
+    function pruneForAssignee(node, assignee) {
+        if (node.Children.length === 0) {
+            return node.Assignee === assignee ? node : null;
+        }
+        const prunedChildren = node.Children.map(c => pruneForAssignee(c, assignee)).filter(Boolean);
+        return prunedChildren.length === 0 ? null : {...node, Children: prunedChildren};
     }
 
     /* ===== EXPAND STATE =====
        Список "свёрнутых" id, а не "развёрнутых" - так по умолчанию (пока
        id нет в списке) всё развёрнуто, включая узлы режима "по
        исполнителям", которые появляются только при переключении и не
-       могли бы попасть в whitelist заранее. */
+       могли бы попасть в whitelist заранее. Id задач общие для обоих
+       режимов, так что свернуть/развернуть конкретный эпик - это на самом
+       деле разовое решение "мне сейчас не интересны детали X", а не
+       настройка каждого режима по отдельности. */
     const collapsedIds = new Set();
 
     function isExpanded(node) {
@@ -356,14 +463,18 @@
         return matchesQuery && matchesAssignee;
     }
 
-    // Помечает узел как видимый, если подходит он сам или хоть один потомок;
-    // ветки, ведущие к найденному, автоматически разворачиваются.
-    function markVisible(node, query, assignee) {
-        const anyChildVisible = node.Children
-            .map(c => markVisible(c, query, assignee))
-            .some(Boolean);
+    // Помечает узел и его поддерево как видимые. Если узел сам подошёл под
+    // поиск (например, ввели номер эпика) - forced передаётся вниз, и все
+    // его потомки остаются видны целиком, а не только те, что тоже
+    // совпали бы с запросом по отдельности. Ветки, ведущие к найденному,
+    // автоматически разворачиваются.
+    function markVisible(node, query, assignee, forced) {
         node._selfMatch = nodeMatches(node, query, assignee);
-        node._visible = node._selfMatch || anyChildVisible;
+        const childForced = forced || node._selfMatch;
+        const anyChildVisible = node.Children
+            .map(c => markVisible(c, query, assignee, childForced))
+            .some(Boolean);
+        node._visible = forced || node._selfMatch || anyChildVisible;
         if (anyChildVisible && (query || assignee)) {
             collapsedIds.delete(node.Id);
         }
@@ -382,13 +493,15 @@
         selection.append(() => document.createTextNode(text.slice(idx + query.length)));
     }
 
-    /* ===== RENDER: RULER (линейка дат, общая для всех строк) ===== */
-    function renderRuler() {
-        const row = d3.select('#chart').append('div').attr('class', 'ruler-row');
-        row.append('div').attr('class', 'tree-col').text('Задача');
+    /* ===== RENDER: заголовки (по одному в каждой панели, оба sticky top) ===== */
+    function renderTreeHeader() {
+        d3.select('#tree-panel').append('div').attr('class', 'header-row').text('Задача');
+    }
 
-        const svg = row.append('div').attr('class', 'bar-col')
-            .append('svg').attr('width', TIMELINE_WIDTH).attr('height', 22);
+    function renderTimelineRuler() {
+        const svg = d3.select('#timeline-panel').append('div').attr('class', 'header-row')
+            .style('padding', 0)
+            .append('svg').attr('width', timelineWidth).attr('height', 22);
 
         const days = d3.timeDay.range(minDate, d3.timeDay.offset(maxDate, 1));
         svg.selectAll('rect.nonwork-band')
@@ -398,30 +511,112 @@
             .attr('y', 0)
             .attr('width', d => Math.max(1, xScale(d3.timeDay.offset(d, 1)) - xScale(d)))
             .attr('height', 22)
-            .attr('fill', 'rgba(255,255,255,.15)');
+            .attr('fill', 'url(#hatch-global)');
 
+        // подписи дат: по дню - но не полной датой (она физически не
+        // помещается в 55px на день и наезжает на соседей), а только числом;
+        // полная дата - лишь в начале месяца и на самом первом дне, чтобы
+        // не потерять ориентир, к какому месяцу/году относятся числа рядом.
+        // Если и число не помещается (сильно уменьшили масштаб) - подписи
+        // только по неделям (Пн), полной датой.
+        const dayNum = d3.timeFormat('%d');
+        const tickDates = ZOOM_LEVELS[zoomIdx] >= 18 ? days : d3.timeMonday.range(minDate, d3.timeDay.offset(maxDate, 1));
         svg.selectAll('text.tick')
-            .data(d3.timeWeek.range(minDate, d3.timeDay.offset(maxDate, 1)))
+            .data(tickDates)
             .enter().append('text')
-            .attr('x', d => xScale(d) + 2)
+            .attr('x', d => xScale(d) + 3)
             .attr('y', 15)
             .attr('fill', '#fff')
             .attr('font-size', 11)
-            .text(d => fmtDate(d));
+            .text(d => (ZOOM_LEVELS[zoomIdx] < 18 || d.getDate() === 1 || +d === +minDate) ? fmtDate(d) : dayNum(d));
+
+        svg.selectAll('line.week')
+            .data(d3.timeMonday.range(minDate, d3.timeDay.offset(maxDate, 1)))
+            .enter().append('line')
+            .attr('x1', d => xScale(d)).attr('x2', d => xScale(d))
+            .attr('y1', 0).attr('y2', 22)
+            .attr('stroke', 'rgba(255,255,255,.35)');
+    }
+
+    function barTooltip(node) {
+        const head = node.EpicJiraKey ? `${node.EpicJiraKey} → ${node.Id} — ${node.Name}` : `${node.Id} — ${node.Name}`;
+        const lines = [head, `${fmtDate(node._start)} → ${fmtDate(node._end)}`];
+        if (node.Assignee) lines.push(node.Assignee);
+        return lines.join('\n');
+    }
+
+    /* ===== RENDER: полоска задачи (фон нерабочих дней + сам бар + штриховка) =====
+       Фон нерабочих дней рисуется на всю ширину строки независимо от
+       наличия бара - так видно выходные и там, где задачи нет, как раньше
+       было видно в посуточной сетке по дням. */
+    function renderBarCell(barCol, node) {
+        const svg = barCol.append('svg').attr('width', timelineWidth).attr('height', ROW_HEIGHT);
+
+        d3.timeDay.range(minDate, d3.timeDay.offset(maxDate, 1))
+            .filter(d => isWeekend(d) || globalHolidaySet.has(ymdLocal(d)))
+            .forEach(d => {
+                svg.append('rect')
+                    .attr('x', xScale(d)).attr('y', 1)
+                    .attr('width', Math.max(1, xScale(d3.timeDay.offset(d, 1)) - xScale(d)))
+                    .attr('height', ROW_HEIGHT - 2)
+                    .attr('fill', 'url(#hatch-global)');
+            });
+
+        if (!node._start || !node._end) return;
+
+        const x0 = xScale(node._start), x1 = xScale(d3.timeDay.offset(node._end, 1));
+        svg.append('rect')
+            .attr('x', x0).attr('y', 3)
+            .attr('width', Math.max(2, x1 - x0)).attr('height', ROW_HEIGHT - 6)
+            .attr('rx', 3)
+            .attr('fill', colorScale(node.ColorGroupId))
+            .append('title')
+            .text(barTooltip(node));
+
+        // штриховка поверх бара: свой угол для общих нерабочих дней и
+        // зеркальный - для личных (отпуск и т.п. у конкретного исполнителя);
+        // если день и общий, и личный нерабочий - рисуются оба узора разом.
+        const personalSet = node.Assignee ? new Set(resourceNonWorking[node.Assignee] || []) : null;
+        d3.timeDay.range(node._start, d3.timeDay.offset(node._end, 1)).forEach(d => {
+            const key = ymdLocal(d);
+            const global = isWeekend(d) || globalHolidaySet.has(key);
+            const personal = !!personalSet && personalSet.has(key);
+            if (!global && !personal) return;
+
+            const x = xScale(d), w = Math.max(1, xScale(d3.timeDay.offset(d, 1)) - x);
+            if (global) {
+                svg.append('rect').attr('x', x).attr('y', 3).attr('width', w).attr('height', ROW_HEIGHT - 6).attr('fill', 'url(#hatch-global)');
+            }
+            if (personal) {
+                svg.append('rect').attr('x', x).attr('y', 3).attr('width', w).attr('height', ROW_HEIGHT - 6).attr('fill', 'url(#hatch-personal)');
+            }
+        });
     }
 
     /* ===== RENDER: ONE TASK ROW =====
-       depth передаётся явно, а не берётся из node._depth: в режиме "по
+       Рисует пару синхронизированных строк - в #tree-panel (название) и в
+       #timeline-panel (полоска) - с общим data-row-индексом: по нему же
+       синхронизируется hover между панелями (см. wireHoverSync) и чередование
+       фона (через явный класс "stripe", а не nth-child - линейка дат и
+       заголовок теперь в отдельной панели, так что nth-child по факту тоже
+       был бы неверным индексом).
+       depth передаётся явно, а не берётся из поля узла: в режиме "по
        исполнителям" одни и те же узлы-задачи оказываются на другой
-       глубине, чем в дереве, а node - общий объект (тот же самый лист). */
-    function renderRow(container, node, query, depth) {
+       глубине, чем в дереве целиком. */
+    let rowIndex = 0;
+
+    function renderRow(node, query, depth) {
         if (!node._visible) return;
 
-        const row = container.append('div').attr('class', 'tree-row');
-        if (node.StatusLabel) row.classed('muted', true);
+        const idx = rowIndex++;
+        const rowClass = 'tree-row' + (idx % 2 === 1 ? ' stripe' : '') + (node.StatusLabel ? ' muted' : '');
 
-        const label = row.append('div').attr('class', 'tree-col')
-            .style('padding-left', `${8 + depth * 18}px`);
+        const label = d3.select('#tree-panel').append('div')
+            .attr('class', rowClass)
+            .attr('data-row', idx)
+            .style('padding-left', `${8 + depth * 18}px`)
+            .on('mouseenter', () => setRowHover(idx, true))
+            .on('mouseleave', () => setRowHover(idx, false));
 
         // название - в отдельной резиновой зоне (только оно обрезается
         // многоточием, если не помещается); бейджи - в своей, нерезиновой.
@@ -445,66 +640,63 @@
         if (node._isGroupHeader) nameSpan.style('font-weight', '600');
         appendHighlighted(nameSpan, node.Name, query);
 
+        // родительский эпик - приглушённой меткой перед собственной, чтобы
+        // было видно, к чему относится задача, не разворачивая дерево вверх
+        if (node.EpicJiraKey) {
+            const epic = badges.append(node.EpicJiraUrl ? 'a' : 'span').attr('class', 'jira-badge epic-badge').text(node.EpicJiraKey);
+            if (node.EpicJiraUrl) epic.attr('href', node.EpicJiraUrl).attr('target', '_blank').attr('rel', 'noopener');
+        }
         if (node.JiraKey) {
             const jira = badges.append(node.JiraUrl ? 'a' : 'span').attr('class', 'jira-badge').text(node.JiraKey);
             if (node.JiraUrl) jira.attr('href', node.JiraUrl).attr('target', '_blank').attr('rel', 'noopener');
         }
-        if (node.Assignee) {
+        // исполнитель и так виден по заголовку группы в режиме "по
+        // исполнителям" - бейдж там был бы лишним дублированием.
+        if (node.Assignee && viewMode !== 'resources') {
             badges.append('span').attr('class', 'assignee-badge').text(node.Assignee);
         }
         if (node.StatusLabel) {
             badges.append('span').attr('class', 'status-badge').text(node.StatusLabel);
         }
 
-        const barCol = row.append('div').attr('class', 'bar-col');
-        if (node._start && node._end) {
-            const svg = barCol.append('svg').attr('width', TIMELINE_WIDTH).attr('height', ROW_HEIGHT);
-            const x0 = xScale(node._start);
-            const x1 = xScale(d3.timeDay.offset(node._end, 1));
-
-            svg.append('rect')
-                .attr('x', x0).attr('y', 3)
-                .attr('width', Math.max(2, x1 - x0)).attr('height', ROW_HEIGHT - 6)
-                .attr('rx', 3)
-                .attr('fill', colorScale(node.ColorGroupId))
-                .append('title')
-                .text(`${node.Id} — ${node.Name}\n${fmtDate(node._start)} → ${fmtDate(node._end)}${node.Assignee ? '\n' + node.Assignee : ''}`);
-
-            // нерабочие дни исполнителя внутри интервала - лёгкая засветка поверх бара
-            if (node.Assignee) {
-                d3.timeDay.range(node._start, d3.timeDay.offset(node._end, 1))
-                    .filter(d => isNonWork(d, node.Assignee))
-                    .forEach(d => {
-                        svg.append('rect')
-                            .attr('x', xScale(d)).attr('y', 3)
-                            .attr('width', Math.max(1, xScale(d3.timeDay.offset(d, 1)) - xScale(d)))
-                            .attr('height', ROW_HEIGHT - 6)
-                            .attr('fill', 'rgba(255,255,255,.55)');
-                    });
-            }
-        }
+        const barRow = d3.select('#timeline-panel').append('div')
+            .attr('class', rowClass)
+            .attr('data-row', idx)
+            .on('mouseenter', () => setRowHover(idx, true))
+            .on('mouseleave', () => setRowHover(idx, false));
+        renderBarCell(barRow, node);
 
         if (hasChildren && isExpanded(node)) {
-            node.Children.forEach(c => renderRow(container, c, query, depth + 1));
+            node.Children.forEach(c => renderRow(c, query, depth + 1));
         }
+    }
+
+    function setRowHover(idx, on) {
+        d3.select(`#tree-panel [data-row="${idx}"]`).classed('hover', on);
+        d3.select(`#timeline-panel [data-row="${idx}"]`).classed('hover', on);
     }
 
     /* ===== MAIN RENDER ===== */
     function render() {
+        updateScale();
+        rowIndex = 0;
+
         const query = d3.select('#search').property('value').trim().toLowerCase();
         const assignee = d3.select('#assignee-filter').property('value');
         const roots = getRoots();
-        const anyVisible = roots.map(r => markVisible(r, query, assignee)).some(Boolean);
+        const anyVisible = roots.map(r => markVisible(r, query, assignee, false)).some(Boolean);
 
-        const chart = d3.select('#chart').html('');
-        renderRuler();
+        d3.select('#tree-panel').html('');
+        d3.select('#timeline-panel').html('');
+        renderTreeHeader();
+        renderTimelineRuler();
 
         if (!anyVisible) {
-            chart.append('div').attr('class', 'empty-message').text('Ничего не найдено');
+            d3.select('#tree-panel').append('div').attr('class', 'empty-message').text('Ничего не найдено');
             return;
         }
 
-        roots.forEach(r => renderRow(chart, r, query, 0));
+        roots.forEach(r => renderRow(r, query, 0));
     }
 
     function setAllExpanded(value) {
@@ -517,6 +709,25 @@
     /* ===== CONTROLS ===== */
     d3.select('#search').on('input', render);
     d3.select('#assignee-filter').on('change', render);
+    d3.select('#zoom-in').on('click', () => zoomTo(Math.min(zoomIdx + 1, ZOOM_LEVELS.length - 1)));
+    d3.select('#zoom-out').on('click', () => zoomTo(Math.max(zoomIdx - 1, 0)));
+
+    // Смена zoomIdx меняет px/день, а значит и смысл текущего scrollLeft
+    // (те же самые пиксели после этого указывают на совсем другую дату) -
+    // "прокрутка после зума куда-то уезжает", если этого не компенсировать.
+    // Поэтому запоминаем дату, которая сейчас в центре видимой области, по
+    // СТАРОЙ шкале - и после пересчёта шкалы возвращаем именно её в центр.
+    function zoomTo(newZoomIdx) {
+        if (newZoomIdx === zoomIdx) return;
+
+        const timelinePanel = document.getElementById('timeline-panel');
+        const centerDate = xScale.invert(timelinePanel.scrollLeft + timelinePanel.clientWidth / 2);
+
+        zoomIdx = newZoomIdx;
+        render();
+
+        timelinePanel.scrollLeft = xScale(centerDate) - timelinePanel.clientWidth / 2;
+    }
     d3.select('#expand-all').on('click', () => { setAllExpanded(true); render(); });
     d3.select('#collapse-all').on('click', () => { setAllExpanded(false); render(); });
     d3.select('#clear-filters').on('click', () => {
@@ -525,13 +736,50 @@
         render();
     });
 
+    // Кнопка "на сегодня" - только если есть дата среза (FactDate) и она
+    // заметно (>2 недель) отстоит от начала плана; сам план по умолчанию
+    // всегда открывается с начала, а не с сегодняшнего дня - это осознанно,
+    // кнопка только предлагает быстро туда перескочить, а не делает это сама.
+    (function wireTodayButton() {
+        if (!todayDate) return;
+        const gapDays = Math.abs((todayDate - minDate) / 86400000);
+        if (gapDays <= 14) return;
+
+        d3.select('#goto-today').style('display', null).on('click', () => {
+            const timelinePanel = document.getElementById('timeline-panel');
+            timelinePanel.scrollLeft = xScale(todayDate) - timelinePanel.clientWidth / 2;
+        });
+    })();
+
     d3.selectAll('.view-switch button').on('click', function () {
         viewMode = this.dataset.mode;
         d3.selectAll('.view-switch button').classed('active', false);
         d3.select(this).classed('active', true);
         render();
     });
-    d3.select('#view-tasks').classed('active', true);
+    d3.select('#view-resources').classed('active', true);
+
+    // синхронизация вертикального скролла между панелями - обе прокручиваются
+    // как одна таблица, хоть и состоят из двух независимых DOM-деревьев;
+    // флаг syncingScroll защищает от бесконечного пинг-понга событий scroll.
+    (function wireScrollSync() {
+        const treePanel = document.getElementById('tree-panel');
+        const timelinePanel = document.getElementById('timeline-panel');
+        let syncingScroll = false;
+
+        treePanel.addEventListener('scroll', () => {
+            if (syncingScroll) return;
+            syncingScroll = true;
+            timelinePanel.scrollTop = treePanel.scrollTop;
+            syncingScroll = false;
+        });
+        timelinePanel.addEventListener('scroll', () => {
+            if (syncingScroll) return;
+            syncingScroll = true;
+            treePanel.scrollTop = timelinePanel.scrollTop;
+            syncingScroll = false;
+        });
+    })();
 
     render();
 </script>

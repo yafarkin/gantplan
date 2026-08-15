@@ -13,14 +13,14 @@ public static class TaskTreeDataPreparer
 {
     public static TreeContext Prepare(ProjectDto project)
     {
-        var root = BuildNode(project, project.RootTask, colorGroupId: null, depth: 0);
+        var root = BuildNode(project, project.RootTask, colorGroupId: null, depth: 0, epicJiraKey: null, epicJiraUrl: null);
 
         var globalNonWorking = ExpandPeriods(project.GlobalCalendar?.NonWorkingDays);
         var resourceNonWorking = project.Resources
             .Where(r => r.Calendar is not null)
             .ToDictionary(ResourceKey, r => ExpandPeriods(r.Calendar!.NonWorkingDays));
 
-        return new TreeContext(root, globalNonWorking, resourceNonWorking);
+        return new TreeContext(root, globalNonWorking, resourceNonWorking, project.FactDate);
     }
 
     /// <summary>
@@ -41,11 +41,13 @@ public static class TaskTreeDataPreparer
         );
         var globalJson = JsonConvert.SerializeObject(context.GlobalNonWorking);
         var resourceJson = JsonConvert.SerializeObject(context.ResourceNonWorking);
+        var todayJson = JsonConvert.SerializeObject(context.FactDate);
 
         var output = template
             .Replace("{{TreeData}}", treeJson)
             .Replace("{{global_non_working}}", globalJson)
-            .Replace("{{resource_non_working}}", resourceJson);
+            .Replace("{{resource_non_working}}", resourceJson)
+            .Replace("{{fact_date}}", todayJson);
 
         File.WriteAllText(outputPath, output, Encoding.UTF8);
     }
@@ -56,7 +58,8 @@ public static class TaskTreeDataPreparer
     // независимо от того, как устроены id задач (раньше цвет угадывался по
     // первым двум сегментам dot-separated id, что ломалось при других
     // соглашениях об именовании).
-    private static TaskNode BuildNode(ProjectDto project, TaskDto task, string? colorGroupId, int depth)
+    private static TaskNode BuildNode(
+        ProjectDto project, TaskDto task, string? colorGroupId, int depth, string? epicJiraKey, string? epicJiraUrl)
     {
         var effectiveGroupId = depth <= 1 ? task.Id : colorGroupId!;
 
@@ -79,8 +82,14 @@ public static class TaskTreeDataPreparer
             _ => null
         };
 
+        // Для детей "ближайший предок с Jira-ключом" - это сама задача, если
+        // у неё есть свой JiraKey, иначе то, что пришло сверху (пробрасываем
+        // дальше вниз, пока не встретим следующего владельца ключа).
+        var epicKeyForChildren = !string.IsNullOrWhiteSpace(task.JiraKey) ? task.JiraKey : epicJiraKey;
+        var epicUrlForChildren = !string.IsNullOrWhiteSpace(task.JiraKey) ? jiraUrl : epicJiraUrl;
+
         var children = task.Children
-            .Select(child => BuildNode(project, child, effectiveGroupId, depth + 1))
+            .Select(child => BuildNode(project, child, effectiveGroupId, depth + 1, epicKeyForChildren, epicUrlForChildren))
             .ToList();
 
         return new TaskNode(
@@ -88,6 +97,8 @@ public static class TaskTreeDataPreparer
             task.Name,
             task.JiraKey,
             jiraUrl,
+            epicJiraKey,
+            epicJiraUrl,
             assignee,
             task.Plan?.PlannedStart,
             task.Plan?.PlannedFinish,
@@ -122,6 +133,11 @@ public static class TaskTreeDataPreparer
         string Name,
         string? JiraKey,
         string? JiraUrl,
+        // ближайший предок (не сама задача), у которого есть свой JiraKey -
+        // "родительский эпик", чтобы было видно, к чему относится задача,
+        // не листая дерево вверх и не разворачивая свёрнутые узлы
+        string? EpicJiraKey,
+        string? EpicJiraUrl,
         string? Assignee,
         DateOnly? Start,
         DateOnly? End,
@@ -133,6 +149,10 @@ public static class TaskTreeDataPreparer
     public sealed record TreeContext(
         TaskNode Root,
         DateOnly[] GlobalNonWorking,
-        Dictionary<string, DateOnly[]> ResourceNonWorking
+        Dictionary<string, DateOnly[]> ResourceNonWorking,
+        // Дата среза "на сегодня" (ProjectDto.FactDate) - используется только
+        // для кнопки "на сегодня" в шаблоне; сама временная ось по-прежнему
+        // всегда начинается с начала плана, а не с этой даты.
+        DateOnly? FactDate
     );
 }
