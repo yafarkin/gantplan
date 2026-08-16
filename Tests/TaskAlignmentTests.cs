@@ -518,6 +518,129 @@ public class TaskAlignmentTests
         Assert.That(ex.Message, Does.Contain("Can't find resource for task 1"));
     }
 
+    // У одного человека два периода NonWorkingDays пересекаются на одну и ту
+    // же дату - в отличие от глобального календаря (где пересечение разных
+    // источников - штатный случай, см. CalendarLogic), у одного ресурса это
+    // почти наверняка ошибка в данных (дубль записи или опечатка в дате), а
+    // не два независимых легитимных периода - поэтому здесь ошибка, а не
+    // молчаливое слияние.
+    [Test]
+    public void OverlappingResourceCalendarPeriodsShouldFailValidationTest()
+    {
+        var project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 1),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "root",
+                Tags = RequiredTags(),
+                Limit = SimpleLimit()
+            },
+            Resources =
+            [
+                new ResourceDto
+                {
+                    Role = "dev",
+                    Name = "john",
+                    Calendar = new CalendarDto
+                    {
+                        NonWorkingDays =
+                        [
+                            new CalendarPeriod { From = new DateOnly(2026, 1, 5), To = new DateOnly(2026, 1, 10) },
+                            new CalendarPeriod { From = new DateOnly(2026, 1, 8), To = new DateOnly(2026, 1, 12) }
+                        ]
+                    }
+                }
+            ]
+        };
+
+        var taskAlignment = new TaskAlignment();
+        var ex = Assert.Throws<Exception>(() => taskAlignment.Alignment(project, DefaultWeights));
+
+        Assert.That(ex.Message, Does.Contain("john"));
+        Assert.That(ex.Message, Does.Contain("NonWorkingDays"));
+    }
+
+    // То же самое, но у WorkingDays (например, две отдельные "рабочие
+    // отработки" одного человека, которые перекрылись) - проверяем оба
+    // списка периодов, не только NonWorkingDays.
+    [Test]
+    public void OverlappingResourceWorkingDaysPeriodsShouldFailValidationTest()
+    {
+        var project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 1),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "root",
+                Tags = RequiredTags(),
+                Limit = SimpleLimit()
+            },
+            Resources =
+            [
+                new ResourceDto
+                {
+                    Role = "dev",
+                    Name = "john",
+                    Calendar = new CalendarDto
+                    {
+                        WorkingDays =
+                        [
+                            new CalendarPeriod { From = new DateOnly(2026, 1, 5), To = new DateOnly(2026, 1, 10) },
+                            new CalendarPeriod { From = new DateOnly(2026, 1, 8), To = new DateOnly(2026, 1, 12) }
+                        ]
+                    }
+                }
+            ]
+        };
+
+        var taskAlignment = new TaskAlignment();
+        var ex = Assert.Throws<Exception>(() => taskAlignment.Alignment(project, DefaultWeights));
+
+        Assert.That(ex.Message, Does.Contain("john"));
+        Assert.That(ex.Message, Does.Contain("WorkingDays"));
+    }
+
+    // Пересечение NonWorkingDays и WorkingDays у одного человека - это НЕ
+    // ошибка, а штатный способ переопределить чужое правило для конкретных
+    // дат (например, глобально команда в командировке, а WorkingDays у
+    // человека явно говорит "а я в эти дни работаю") - здесь проверяем, что
+    // ложного срабатывания нет, только пересечения ВНУТРИ одного и того же
+    // списка считаются ошибкой.
+    [Test]
+    public void NonWorkingAndWorkingDaysOverlapOnSameResourceShouldNotFailValidationTest()
+    {
+        var project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 1),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "root",
+                Tags = RequiredTags(),
+                Limit = SimpleLimit()
+            },
+            Resources =
+            [
+                new ResourceDto
+                {
+                    Role = "dev",
+                    Name = "john",
+                    Calendar = new CalendarDto
+                    {
+                        NonWorkingDays = [new CalendarPeriod { From = new DateOnly(2026, 1, 5), To = new DateOnly(2026, 1, 10) }],
+                        WorkingDays = [new CalendarPeriod { From = new DateOnly(2026, 1, 8), To = new DateOnly(2026, 1, 9) }]
+                    }
+                }
+            ]
+        };
+
+        var taskAlignment = new TaskAlignment();
+        Assert.DoesNotThrow(() => taskAlignment.Alignment(project, DefaultWeights));
+    }
+
     [Test]
     public void WeightsWithoutDefaultPriorityShouldFailTest()
     {

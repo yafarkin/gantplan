@@ -31,8 +31,57 @@ public static class ProjectValidator
         }
 
         ValidateNoCycles(treeIndex, errors);
+        ValidateResourceCalendars(resourceList, errors);
 
         return errors;
+    }
+
+    // У одного человека периоды внутри одного и того же списка
+    // (NonWorkingDays или WorkingDays) не должны пересекаться - в отличие от
+    // глобального календаря, где пересечение независимых источников (гос.
+    // праздники + командировка команды) - штатный случай, у одного ресурса
+    // пересечение почти наверняка значит, что в данные закралась ошибка
+    // (дубль записи, опечатка в дате). Пересечение МЕЖДУ NonWorkingDays и
+    // WorkingDays одного человека - это не ошибка, а штатный способ
+    // переопределить для себя чужое правило (см. CalendarLogic), поэтому
+    // списки проверяются по отдельности, не друг против друга.
+    private static void ValidateResourceCalendars(IReadOnlyCollection<ResourceDto> resources, List<string> errors)
+    {
+        foreach (var resource in resources)
+        {
+            if (resource.Calendar is null)
+            {
+                continue;
+            }
+
+            ValidateNoOverlaps(resource.Name, "NonWorkingDays", resource.Calendar.NonWorkingDays, errors);
+            ValidateNoOverlaps(resource.Name, "WorkingDays", resource.Calendar.WorkingDays, errors);
+        }
+    }
+
+    private static void ValidateNoOverlaps(
+        string resourceName, string listName, ICollection<CalendarPeriod>? periods, List<string> errors)
+    {
+        if (periods is null || periods.Count < 2)
+        {
+            return;
+        }
+
+        var ordered = periods.ToList();
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            for (var j = i + 1; j < ordered.Count; j++)
+            {
+                var a = ordered[i];
+                var b = ordered[j];
+                if (a.From <= b.To && b.From <= a.To)
+                {
+                    errors.Add(
+                        $"Resource {resourceName} has overlapping {listName} periods: " +
+                        $"{a.From:yyyy-MM-dd}..{a.To:yyyy-MM-dd} and {b.From:yyyy-MM-dd}..{b.To:yyyy-MM-dd}");
+                }
+            }
+        }
     }
 
     private static void ValidateLeaf(
