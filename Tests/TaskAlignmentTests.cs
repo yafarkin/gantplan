@@ -158,6 +158,66 @@ public class TaskAlignmentTests
         Assert.That(resolved, Is.EquivalentTo(new[] { "A1" }));
     }
 
+    // То же самое, что и предыдущий тест, но исключение через Fact.IsPaused,
+    // а не Disabled - TaskDto.CanSkipTask объединяет оба условия через ||,
+    // но до сих пор тестами было покрыто только Disabled; надо убедиться,
+    // что настоящая "пауза" (запись факта, а не булевый флаг) работает
+    // точно так же - и исключается из решения, и вырезается из чужих
+    // PredecessorIds при разворачивании зависимости от группы.
+    [Test]
+    public void DependencyOnGroupShouldExcludePausedLeavesTest()
+    {
+        var project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 1),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "root",
+                Tags = RequiredTags(),
+                Children = [
+                    new TaskDto
+                    {
+                        Id = "A",
+                        Name = "group A",
+                        Children = [
+                            new TaskDto { Id = "A1", Name = "A1", Limit = SimpleLimit() },
+                            new TaskDto
+                            {
+                                Id = "A2",
+                                Name = "A2 - paused",
+                                Limit = SimpleLimit(),
+                                Fact = new TaskFactDto
+                                {
+                                    Records = [new TaskFactRecordDto { RecordedAt = new DateOnly(2026, 1, 1), Type = TaskFactRecordType.Paused }]
+                                }
+                            }
+                        ]
+                    },
+                    new TaskDto
+                    {
+                        Id = "X",
+                        Name = "depends on the whole group A",
+                        Limit = SimpleLimit("A")
+                    }
+                ]
+            },
+            Resources = [DevResource()]
+        };
+
+        var taskAlignment = new TaskAlignment();
+        taskAlignment.Alignment(project, DefaultWeights);
+
+        // A2 на паузе - не должна попасть в список задач "на решение"...
+        Assert.That(taskAlignment.FlattenTasksToSolve.ContainsKey("A2"), Is.False);
+        Assert.That(taskAlignment.FlattenTasksToSolve.ContainsKey("A1"), Is.True);
+
+        // ...и должна быть вырезана из PredecessorIds задачи, зависящей от
+        // ВСЕЙ группы A, как и Disabled-лист в тесте выше.
+        var resolved = taskAlignment.FlattenTasksCopy["X"].Limit!.PredecessorIds;
+        Assert.That(resolved, Is.EquivalentTo(new[] { "A1" }));
+    }
+
     [Test]
     public void MixedLeafAndGroupPredecessorsShouldResolveTest()
     {

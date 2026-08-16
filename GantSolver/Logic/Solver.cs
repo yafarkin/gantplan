@@ -470,6 +470,15 @@ public sealed class Solver
     // также должна укладываться в DueDate/StartAfter, если они заданы.
     private void CreateDependencyBetweenTasks()
     {
+        // Есть ли в проекте вообще хоть одна уже завершённая задача - т.е.
+        // мы точно не первый раз решаем этот проект с чистого листа, а
+        // перепланируем то, что уже частично прожито. Только в этом случае
+        // имеет смысл запрещать свежим задачам стартовать раньше даты среза
+        // (см. ниже) - на самом первом решении "с нуля" бэкдейтинг легитимен
+        // (например, заводим в систему уже идущий проект и просим солвер
+        // восстановить, что по датам должно было случиться раньше FactDate).
+        var hasAlreadyCompletedWork = _taskAlignment.OriginalTasks.Values.Any(t => t.Fact?.IsFinished == true);
+
         foreach (var taskKv in _taskAlignment.FlattenTasksToSolve)
         {
             var task = taskKv.Value;
@@ -496,6 +505,25 @@ public sealed class Solver
             {
                 var startAfter = task.Limit.StartAfter.Value.DayNumber - _project.ProjectStart.DayNumber;
                 _model.Add(_starts[task.Id] >= startAfter);
+            }
+
+            // Задача без факта прогресса (ещё по-настоящему не начата) не
+            // может стартовать раньше даты среза - иначе задачи, уже ставшие
+            // Completed по предыдущей FactDate и переставшие быть интервалом
+            // в модели (см. CanSkipTask), оставляют в календарном прошлом
+            // "свободное" на вид время, куда солвер может без всякого смысла
+            // поставить совершенно новую задачу, которую физически
+            // невозможно было начать раньше, чем её вообще добавили в план.
+            // Уже начатую задачу (Fact.IsProgress) не трогаем - её старт и
+            // так жёстко зафиксирован датой факта ниже, в CreateTasksIntervals,
+            // и та дата вполне законно может быть раньше текущей FactDate.
+            if (hasAlreadyCompletedWork && _project.FactDate is not null && task.Fact?.IsProgress != true)
+            {
+                var factDateOffset = _project.FactDate.Value.DayNumber - _project.ProjectStart.DayNumber;
+                if (factDateOffset > 0)
+                {
+                    _model.Add(_starts[task.Id] >= factDateOffset);
+                }
             }
         }
     }
