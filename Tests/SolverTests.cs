@@ -393,7 +393,15 @@ public sealed class SolverTests
         Assert.That(tasks[0].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 30)));
         
         Assert.That(tasks[1].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 1)));
-        //Assert.That(tasks[1].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 9))); // fix later
+        // S = 3 рабочих дня (при Confidence по умолчанию 0, см. TShirtType.ToDays):
+        // 01.01 (чт) и 02.01 (пт) - первые два, 03-04.01 - выходные, 05.01
+        // (пн) - третий. Раньше здесь ожидали 09.01 - это было ДО фикса
+        // "Fixed bug with non-working days constraints stretching task
+        // duration" (12ca9b9): тогда пересечение с нерабочими днями иногда
+        // некорректно растягивало длительность, отсюда и подавленная
+        // проверка "fix later". Сам солвер это уже чинили; тест просто не
+        // актуализировали.
+        Assert.That(tasks[1].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 5)));
     }
 
     // Ни одной Fact-записи не задано на входе - весь факт (Started/Completed/
