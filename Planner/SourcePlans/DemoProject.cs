@@ -175,7 +175,13 @@ public static class DemoProject
                         JiraKey = "DEMO-075",
                         Tags = new() { [TaskTagKeys.WorkType] = WorkType.Business.ToString() },
                         Children = [
-                            // сделано примерно половина (60 дней оценка, 30 осталось)
+                            // сделано примерно половина (60 дней оценка, 30 осталось).
+                            // Started идёт первой записью, до InProgress-чекпоинта -
+                            // без неё Solver.PostFillAfterSolve раньше считал, что
+                            // задачу "ещё не трогали", и молча дописывал вторую,
+                            // пересчитанную с нуля из Limit.Duration оценку остатка
+                            // (баг, найденный на реальном двойном прогоне Planner -
+                            // см. Solver.cs, hasAnyProgressRecord).
                             new TaskDto
                             {
                                 Id = "1.05.1.10",
@@ -186,6 +192,13 @@ public static class DemoProject
                                 {
                                     Records =
                                     [
+                                        new TaskFactRecordDto
+                                        {
+                                            RecordedAt = new DateOnly(2025, 11, 24),
+                                            Type = TaskFactRecordType.Started,
+                                            ResourceName = "developer 1",
+                                            Duration = 60
+                                        },
                                         new TaskFactRecordDto
                                         {
                                             RecordedAt = new DateOnly(2025, 11, 29),
@@ -207,6 +220,13 @@ public static class DemoProject
                                 {
                                     Records =
                                     [
+                                        new TaskFactRecordDto
+                                        {
+                                            RecordedAt = new DateOnly(2025, 11, 24),
+                                            Type = TaskFactRecordType.Started,
+                                            ResourceName = "developer 3",
+                                            Duration = 42
+                                        },
                                         new TaskFactRecordDto
                                         {
                                             RecordedAt = new DateOnly(2025, 11, 27),

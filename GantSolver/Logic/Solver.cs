@@ -171,9 +171,23 @@ public sealed class Solver
                 continue;
             }
 
-            // Задача ещё ни разу не стартовала - фиксируем факт старта с той
+            // Задачу ещё вообще не трогали (ни разу не отмечали ни Started, ни
+            // InProgress/CorrectedDuration) - фиксируем факт старта с той
             // длительностью, которую заложили в модель для выбранного ресурса.
-            if (task.Fact.Records.All(x => x.Type != TaskFactRecordType.Started))
+            // Проверяем именно "нет вообще никакой прогресс-записи", а не узко
+            // "нет записи именно типа Started" - иначе если задаче на входе
+            // задали только InProgress (например, "уже наполовину сделана", без
+            // отдельно заведённого Started), этот код решал бы, что задача
+            // "ещё не стартовала", и дописывал бы вторую, конкурирующую запись
+            // с длительностью, пересчитанной заново из Limit - молча замещая
+            // (при выборе "последней прогресс-записи" ниже и в
+            // CreateTasksIntervals) уже известный, реальный остаток чужой,
+            // выдуманной оценкой.
+            var hasAnyProgressRecord = task.Fact.Records.Any(x =>
+                x.Type is TaskFactRecordType.Started or TaskFactRecordType.InProgress
+                    or TaskFactRecordType.CorrectedDuration);
+
+            if (!hasAnyProgressRecord)
             {
                 task.Fact.Records.Add(new TaskFactRecordDto
                 {

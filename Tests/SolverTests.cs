@@ -832,4 +832,66 @@ public sealed class SolverTests
         Assert.That(task.Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 2, 12)));
         Assert.That(task.Plan!.ResourceName, Is.EqualTo("john"));
     }
+
+    // Регрессия на реальный баг, найденный на живом двойном прогоне Planner
+    // (DemoProject -> project.json -> читаем project.json заново): задаче на
+    // входе задали только InProgress (типичная запись "уже наполовину
+    // сделана"), без отдельно заведённой Started. PostFillAfterSolve считал
+    // это "задачу ещё вообще не трогали" и молча дописывал вторую,
+    // конкурирующую Started-запись с длительностью, пересчитанной заново из
+    // Limit.Duration (тут - 60, заведомо больше настоящих 10 оставшихся) -
+    // именно она потом побеждала как "последняя запись прогресса" и на
+    // следующем прогоне фиксировала совершенно неверный (сильно
+    // раздутый) остаток, из-за чего у одного исполнителя схлопывались две
+    // не пересекавшиеся раньше задачи и Solve() начинал возвращать false.
+    [Test]
+    public void ExistingInProgressRecordShouldNotBeOverriddenBySyntheticStartedTest()
+    {
+        _project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 5),
+            FactDate = new DateOnly(2026, 1, 10),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "root",
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
+                Children = [
+                    new TaskDto
+                    {
+                        Id = "task",
+                        Name = "already in progress, no preceding Started record",
+                        Limit = new TaskLimitDto { Duration = 60, ResourceRole = "dev" },
+                        Fact = new TaskFactDto
+                        {
+                            Records =
+                            [
+                                new TaskFactRecordDto { RecordedAt = new DateOnly(2026, 1, 5), Type = TaskFactRecordType.InProgress, ResourceName = "john", Duration = 10 }
+                            ]
+                        }
+                    }
+                ]
+            },
+            Resources = [new ResourceDto { Role = "dev", Name = "john" }]
+        };
+
+        Assert.IsTrue(_solver.Solve(_project));
+
+        var task = _project.RootTask.Children.First();
+
+        // никакой синтетической Started-записи не появилось - была и
+        // осталась ровно одна исходная InProgress-запись, плюс её
+        // корректно пересчитанное продолжение по FactDate.
+        Assert.That(task.Fact!.Records.Select(r => r.Type), Is.EqualTo(new[]
+        {
+            TaskFactRecordType.InProgress,
+            TaskFactRecordType.InProgress
+        }));
+
+        // план отталкивается от исходных 10 дней (плюс пересчёт по
+        // FactDate), а не от 60-дневной оценки Limit.Duration.
+        Assert.That(task.Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 1, 6)));
+        Assert.That(task.Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 1, 19)));
+        Assert.That(task.Fact.Records[1].Duration, Is.EqualTo(6));
+    }
 }
