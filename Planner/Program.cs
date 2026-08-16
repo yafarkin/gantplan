@@ -29,7 +29,14 @@ else
 var s = new Solver();
 if (!s.Solve(project, 30))
 {
+    // Останавливаемся здесь, а не проваливаемся дальше: project - тот же
+    // (непроверенный/неполный) объект, каким был до Solve, перезаписывать
+    // им уже существующий валидный project.json нечем, а генерировать
+    // timeline.html без Plan-дат - только вводить в заблуждение. Ненулевой
+    // код возврата - чтобы вызывающий скрипт (в т.ч. CI) мог отличить
+    // "не решилось" от "всё нормально", а не только читать текст в консоли.
     Console.WriteLine("Sorry, I couldn't solve this project");
+    return 1;
 }
 
 var jsonSettings = new JsonSerializerSettings
@@ -44,6 +51,8 @@ await File.WriteAllTextAsync("project.json", outputJson);
 var treeContext = TaskTreeDataPreparer.Prepare(project);
 TaskTreeDataPreparer.GenerateHtml("Templates/task_tree_template.html", "timeline.html", treeContext);
 RevealFile("timeline.html");
+
+return 0;
 
 static void RevealFile(string fullPath)
 {
