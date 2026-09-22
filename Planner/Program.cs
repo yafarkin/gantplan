@@ -39,6 +39,16 @@ if (!s.Solve(project, 30))
     return 1;
 }
 
+// Квартал определяется от даты начала плана (без хардкода дат).
+var qs = project.ProjectStart;
+var qe = qs.AddMonths(3).AddDays(-1);
+
+var quarterReport = QuarterDistributionExporter.Build(project, qs, qe);
+Console.WriteLine(quarterReport);
+
+var dailyPlan = DailyPlanExporter.Build(project, qs, qe);
+await File.WriteAllTextAsync("daily_plan.txt", dailyPlan);
+
 var jsonSettings = new JsonSerializerSettings
 {
     NullValueHandling = NullValueHandling.Ignore,
