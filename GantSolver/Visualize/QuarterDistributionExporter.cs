@@ -17,6 +17,8 @@ public static class QuarterDistributionExporter
         double vletPercent = 0.20,
         IReadOnlyCollection<string>? roles = null)
     {
+        QuarterCapacity.ValidatePercent(vletPercent);
+
         var leaves = new List<TaskDto>();
         CollectLeaves(project.RootTask, leaves);
 
@@ -31,7 +33,7 @@ public static class QuarterDistributionExporter
         var globalWorking = WorkingDayCalculator.ExpandPeriods(project.GlobalCalendar?.WorkingDays);
 
         var resources = project.Resources
-            .Where(r => (roles is null || roles.Contains(r.Role)) && tasksByResource.ContainsKey(r.Name))
+            .Where(r => roles is null || roles.Contains(r.Role))
             .OrderBy(r => r.Name)
             .ToList();
 
@@ -45,36 +47,38 @@ public static class QuarterDistributionExporter
         var tBiz = 0;
         var tNonBiz = 0;
         var tIdle = 0;
+        var tQuota = 0;
+        var tOverload = 0;
 
         foreach (var resource in resources)
         {
-            var (avail, biz, nonBiz, idle) = Count(project, resource, quarterStart, quarterEnd,
-                tasksByResource[resource.Name], globalNonWorking, globalWorking);
+            var (avail, biz, nonBiz) = Count(resource, quarterStart, quarterEnd,
+                tasksByResource.GetValueOrDefault(resource.Name) ?? [], globalNonWorking, globalWorking);
 
-            var quota = Round(vletPercent * avail);
-            var capacity = avail - quota;
-            var overload = Math.Max(0, biz + nonBiz - capacity);
+            var allocation = QuarterCapacity.Calculate(avail, biz, nonBiz, vletPercent);
 
             tAvail += avail;
             tBiz += biz;
             tNonBiz += nonBiz;
-            tIdle += idle;
+            tIdle += allocation.Idle;
+            tQuota += allocation.Quota;
+            tOverload += allocation.Overload;
 
-            AppendResourceLine(sb, resource.Name, avail, quota, capacity, biz, nonBiz, idle, overload);
+            AppendResourceLine(sb, resource.Name, avail, allocation.Quota, allocation.Capacity,
+                biz, nonBiz, allocation.Idle, allocation.Overload);
         }
 
         sb.AppendLine();
         sb.AppendLine("ИТОГО:");
-        var tQuota = Round(vletPercent * tAvail);
         var tCapacity = tAvail - tQuota;
-        var tOverload = Math.Max(0, tBiz + tNonBiz - tCapacity);
-        AppendResourceLine(sb, "Всего", tAvail, tQuota, tCapacity, tBiz, tNonBiz, tIdle, tOverload);
+        AppendResourceLine(sb, "Всего", tAvail, tQuota, tCapacity, tBiz, tNonBiz, tIdle, tOverload,
+            total: true);
 
         return sb.ToString();
     }
 
-    private static (int avail, int biz, int nonBiz, int idle) Count(
-        ProjectDto project, ResourceDto resource,
+    private static (int avail, int biz, int nonBiz) Count(
+        ResourceDto resource,
         DateOnly quarterStart, DateOnly quarterEnd,
         ICollection<TaskDto> tasks,
         DateOnly[] globalNonWorking, DateOnly[] globalWorking)
@@ -85,11 +89,11 @@ public static class QuarterDistributionExporter
         var avail = 0;
         var biz = 0;
         var nonBiz = 0;
-        var idle = 0;
-
         for (var day = quarterStart; day <= quarterEnd; day = day.AddDays(1))
         {
-            if (!WorkingDayCalculator.IsWorkingDay(day, globalNonWorking, globalWorking, resourceNonWorking, resourceWorking))
+            if ((resource.AvailFrom is { } from && day < from)
+                || (resource.AvailTo is { } to && day > to)
+                || !WorkingDayCalculator.IsWorkingDay(day, globalNonWorking, globalWorking, resourceNonWorking, resourceWorking))
             {
                 continue;
             }
@@ -98,7 +102,6 @@ public static class QuarterDistributionExporter
             var task = tasks.FirstOrDefault(t => day >= t.Plan!.PlannedStart && day <= t.Plan!.PlannedFinish);
             if (task is null)
             {
-                idle++;
                 continue;
             }
 
@@ -112,7 +115,7 @@ public static class QuarterDistributionExporter
             }
         }
 
-        return (avail, biz, nonBiz, idle);
+        return (avail, biz, nonBiz);
     }
 
     private static bool IsBusiness(TaskDto task)
@@ -123,16 +126,18 @@ public static class QuarterDistributionExporter
 
     private static void AppendResourceLine(
         StringBuilder sb, string name, int avail, int quota, int capacity,
-        int biz, int nonBiz, int idle, int overload)
+        int biz, int nonBiz, int idle, int overload, bool total = false)
     {
         var pctBiz = capacity > 0 ? 100.0 * biz / capacity : 0;
         var pctNonBiz = capacity > 0 ? 100.0 * nonBiz / capacity : 0;
-        var overloadSuffix = overload > 0 ? $"  ПЕРЕГРУЗ +{overload}" : string.Empty;
+        var overloadSuffix = overload > 0
+            ? $"  {(total ? "ПЕРЕГРУЗ ПО ЛЮДЯМ" : "ПЕРЕГРУЗ")} +{overload}"
+            : string.Empty;
 
         sb.AppendLine(
             $"{name,-10} доступно={avail,3}  влёт={quota,3}  ёмкость={capacity,3}  " +
             $"бизнес={biz,3} ({pctBiz,5:0.0}%)  не-бизнес={nonBiz,3} ({pctNonBiz,5:0.0}%)  " +
-            $"простой={idle,3}{overloadSuffix}");
+            $"простой={idle,3} ({(capacity > 0 ? 100.0 * idle / capacity : 0),5:0.0}%){overloadSuffix}");
     }
 
     private static void CollectLeaves(TaskDto task, List<TaskDto> leaves)
@@ -149,8 +154,6 @@ public static class QuarterDistributionExporter
             leaves.Add(task);
         }
     }
-
-    private static int Round(double value) => (int)Math.Round(value, MidpointRounding.AwayFromZero);
 
     private static string FormatDate(DateOnly day) => $"{day:dd.MM.yyyy}";
 }

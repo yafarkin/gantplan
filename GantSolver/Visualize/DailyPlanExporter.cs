@@ -16,6 +16,8 @@ public static class DailyPlanExporter
         DateOnly? quarterEnd = null,
         double vletPercent = 0.20)
     {
+        QuarterCapacity.ValidatePercent(vletPercent);
+
         // Окно квартала определяется от даты плана, если не передано явно.
         var qs = quarterStart ?? StartOfQuarter(project.ProjectStart);
         var qe = quarterEnd ?? qs.AddMonths(3).AddDays(-1);
@@ -51,13 +53,11 @@ public static class DailyPlanExporter
         var totalNonBiz = 0;
         var totalVlet = 0;
         var totalIdle = 0;
+        var totalOverload = 0;
 
         foreach (var resource in project.Resources)
         {
-            if (!tasksByResource.TryGetValue(resource.Name, out var tasks))
-            {
-                continue;
-            }
+            var tasks = tasksByResource.GetValueOrDefault(resource.Name) ?? [];
 
             var resourceNonWorking = WorkingDayCalculator.ExpandPeriods(resource.Calendar?.NonWorkingDays);
             var resourceWorking = WorkingDayCalculator.ExpandPeriods(resource.Calendar?.WorkingDays);
@@ -66,6 +66,13 @@ public static class DailyPlanExporter
             for (var day = project.ProjectStart; day <= endDate; day = day.AddDays(1))
             {
                 var dateStr = FormatDate(day);
+                if ((resource.AvailFrom is { } from && day < from)
+                    || (resource.AvailTo is { } to && day > to))
+                {
+                    body.AppendLine($"{resource.Name}: {dateStr}; недоступен");
+                    continue;
+                }
+
                 if (!WorkingDayCalculator.IsWorkingDay(day, globalNonWorking, globalWorking, resourceNonWorking, resourceWorking))
                 {
                     body.AppendLine($"{resource.Name}: {dateStr}; не рабочий день");
@@ -90,33 +97,32 @@ public static class DailyPlanExporter
             }
 
             var (qAvail, qBiz, qNonBiz) = CountQuarter(
-                tasks, qs, qe, globalNonWorking, globalWorking, resourceNonWorking, resourceWorking);
-            var vlet = Round(vletPercent * qAvail);
-            var capacity = qAvail - vlet;
-            var qIdle = Math.Max(0, capacity - qBiz - qNonBiz);
+                tasks, resource, qs, qe, globalNonWorking, globalWorking, resourceNonWorking, resourceWorking);
+            var allocation = QuarterCapacity.Calculate(qAvail, qBiz, qNonBiz, vletPercent);
 
             totalAvail += qAvail;
             totalBiz += qBiz;
             totalNonBiz += qNonBiz;
-            totalVlet += vlet;
-            totalIdle += qIdle;
+            totalVlet += allocation.Quota;
+            totalIdle += allocation.Idle;
+            totalOverload += allocation.Overload;
 
-            body.AppendLine($"Рабочих дней всего: {qAvail};  из них на бизнес: {qBiz} ({Pct(qBiz, capacity)})");
-            body.AppendLine($"не на бизнес: {qNonBiz} ({Pct(qNonBiz, capacity)});  " +
-                            $"на влёты осталось: {vlet} ({vletPercent:P0});  " +
-                            $"ничем не занят: {qIdle} ({Pct(qIdle, capacity)})");
+            body.AppendLine($"Рабочих дней всего: {qAvail};  из них на бизнес: {qBiz} ({Pct(qBiz, allocation.Capacity)})");
+            body.AppendLine($"не на бизнес: {qNonBiz} ({Pct(qNonBiz, allocation.Capacity)});  " +
+                            $"резерв на влёты: {allocation.Quota} ({vletPercent:P0});  " +
+                            $"ничем не занят: {allocation.Idle} ({Pct(allocation.Idle, allocation.Capacity)})" +
+                            (allocation.Overload > 0 ? $";  ПЕРЕГРУЗ +{allocation.Overload}" : string.Empty));
             body.AppendLine();
         }
 
         var totalCapacity = totalAvail - totalVlet;
-        var totalOverload = Math.Max(0, totalBiz + totalNonBiz - totalCapacity);
 
         var sb = new StringBuilder();
         sb.AppendLine($"===== Квартал {FormatDateShort(qs)} – {FormatDateShort(qe)}, квота «влёт» {vletPercent:P0} =====");
         sb.AppendLine($"ИТОГО: рабочих дней {totalAvail};  бизнес {totalBiz} ({Pct(totalBiz, totalCapacity)});  " +
                       $"не-бизнес {totalNonBiz} ({Pct(totalNonBiz, totalCapacity)});  " +
                       $"влёты {totalVlet} ({vletPercent:P0});  не занят {totalIdle} ({Pct(totalIdle, totalCapacity)})" +
-                      (totalOverload > 0 ? $";  ПЕРЕГРУЗ +{totalOverload}" : string.Empty));
+                      (totalOverload > 0 ? $";  ПЕРЕГРУЗ ПО ЛЮДЯМ +{totalOverload}" : string.Empty));
         sb.AppendLine();
         sb.Append(body.ToString());
 
@@ -160,7 +166,7 @@ public static class DailyPlanExporter
     // Считает по окну квартала: доступные рабочие дни и сколько из них ушло на
     // бизнес/не-бизнес задачи (дни без задачи в счётчики не попадают).
     private static (int avail, int biz, int nonBiz) CountQuarter(
-        ICollection<TaskDto> tasks, DateOnly from, DateOnly to,
+        ICollection<TaskDto> tasks, ResourceDto resource, DateOnly from, DateOnly to,
         DateOnly[] globalNonWorking, DateOnly[] globalWorking,
         DateOnly[] resourceNonWorking, DateOnly[] resourceWorking)
     {
@@ -170,7 +176,9 @@ public static class DailyPlanExporter
 
         for (var day = from; day <= to; day = day.AddDays(1))
         {
-            if (!WorkingDayCalculator.IsWorkingDay(day, globalNonWorking, globalWorking, resourceNonWorking, resourceWorking))
+            if ((resource.AvailFrom is { } availableFrom && day < availableFrom)
+                || (resource.AvailTo is { } availableTo && day > availableTo)
+                || !WorkingDayCalculator.IsWorkingDay(day, globalNonWorking, globalWorking, resourceNonWorking, resourceWorking))
             {
                 continue;
             }
@@ -197,8 +205,6 @@ public static class DailyPlanExporter
 
     private static string Pct(int value, int total) =>
         total > 0 ? $"{100.0 * value / total:0.0}%" : "0.0%";
-
-    private static int Round(double value) => (int)Math.Round(value, MidpointRounding.AwayFromZero);
 
     private static DateOnly StartOfQuarter(DateOnly date)
     {
