@@ -13,7 +13,8 @@ public static class TaskTreeDataPreparer
 {
     public static TreeContext Prepare(ProjectDto project)
     {
-        var root = BuildNode(project, project.RootTask, colorGroupId: null, depth: 0, epicJiraKey: null, epicJiraUrl: null);
+        var colors = TaskColorPalette.Build(project.RootTask);
+        var root = BuildNode(project, project.RootTask, colors, epicJiraKey: null, epicJiraUrl: null);
 
         var globalNonWorking = ExpandPeriods(project.GlobalCalendar?.NonWorkingDays);
         var resourceNonWorking = project.Resources
@@ -53,16 +54,17 @@ public static class TaskTreeDataPreparer
     }
 
     // Обходит дерево сверху вниз и строит по узлу на каждую задачу.
-    // colorGroupId - id ближайшего предка на глубине 1 (прямого ребёнка
-    // корня): всё поддерево под одним таким предком красится одним цветом,
-    // независимо от того, как устроены id задач (раньше цвет угадывался по
-    // первым двум сегментам dot-separated id, что ломалось при других
-    // соглашениях об именовании).
+    // Цвет бара считается заранее для всего дерева разом
+    // (см. TaskColorPalette): свой цвет на эпик, оттенки этого цвета - на
+    // задачи внутри эпика; здесь остаётся только разложить готовые цвета
+    // по узлам.
     private static TaskNode BuildNode(
-        ProjectDto project, TaskDto task, string? colorGroupId, int depth, string? epicJiraKey, string? epicJiraUrl)
+        ProjectDto project,
+        TaskDto task,
+        IReadOnlyDictionary<TaskDto, string> colors,
+        string? epicJiraKey,
+        string? epicJiraUrl)
     {
-        var effectiveGroupId = depth <= 1 ? task.Id : colorGroupId!;
-
         string? assignee = null;
         if (!task.HasChild && task.Plan?.ResourceName is { } resourceName)
         {
@@ -89,7 +91,7 @@ public static class TaskTreeDataPreparer
         var epicUrlForChildren = !string.IsNullOrWhiteSpace(task.JiraKey) ? jiraUrl : epicJiraUrl;
 
         var children = task.Children
-            .Select(child => BuildNode(project, child, effectiveGroupId, depth + 1, epicKeyForChildren, epicUrlForChildren))
+            .Select(child => BuildNode(project, child, colors, epicKeyForChildren, epicUrlForChildren))
             .ToList();
 
         return new TaskNode(
@@ -103,7 +105,7 @@ public static class TaskTreeDataPreparer
             task.Plan?.PlannedStart,
             task.Plan?.PlannedFinish,
             statusLabel,
-            effectiveGroupId,
+            colors.TryGetValue(task, out var color) ? color : TaskColorPalette.StructuralColor,
             children);
     }
 
@@ -142,7 +144,9 @@ public static class TaskTreeDataPreparer
         DateOnly? Start,
         DateOnly? End,
         string? StatusLabel,
-        string ColorGroupId,
+        // цвет бара (hex): у эпика - его собственный цвет, у задач внутри
+        // эпика - оттенки того же цвета (см. TaskColorPalette)
+        string Color,
         List<TaskNode> Children
     );
 

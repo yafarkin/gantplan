@@ -388,11 +388,13 @@
         .domain([minDate, d3.timeDay.offset(maxDate, 1)])
         .range([0, timelineWidth]);
 
-    // цвет - по ColorGroupId (задаётся бэкендом: id ближайшего предка на
-    // глубине 1, то есть все подзадачи одной верхнеуровневой группы красятся
-    // одним цветом независимо от того, как устроены сами id задач)
-    const colorScale = d3.scaleOrdinal(d3.schemeCategory10)
-        .domain(Array.from(new Set([...nodeById.values()].map(n => n.ColorGroupId))));
+    // цвет бара приходит готовым от бэкенда (node.Color, см.
+    // TaskColorPalette): свой цвет на каждый эпик, оттенки этого же цвета -
+    // на задачи внутри эпика, серый - на структурные узлы над эпиками.
+    // Цвет выводится из хэша ключа эпика, поэтому не зависит ни от порядка
+    // задач, ни от того, что тут делает d3: после перегенерации плана эпик
+    // остаётся того же цвета.
+    const FALLBACK_COLOR = '#868e96';
 
     /* ===== ASSIGNEE FILTER OPTIONS ===== */
     const assignees = Array.from(new Set([...nodeById.values()].map(n => n.Assignee).filter(Boolean))).sort();
@@ -434,7 +436,9 @@
                     Name: name,
                     JiraKey: null, JiraUrl: null, EpicJiraKey: null, EpicJiraUrl: null, Assignee: null,
                     Start: null, End: null, StatusLabel: null,
-                    ColorGroupId: name,
+                    // у заголовка ресурса нет своего бара (внутри него
+                    // рисуются бары настоящих задач со своими цветами)
+                    Color: null,
                     _isGroupHeader: true,
                     Children: children
                 };
@@ -643,7 +647,7 @@
             .attr('x', x0).attr('y', 3)
             .attr('width', width).attr('height', rowHeight - 6)
             .attr('rx', 3)
-            .attr('fill', colorScale(node.ColorGroupId))
+            .attr('fill', node.Color || FALLBACK_COLOR)
             .attr('opacity', muted ? .4 : 1)
             .append('title')
             .text(barTooltip(node));
