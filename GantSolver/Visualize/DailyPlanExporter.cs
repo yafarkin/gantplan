@@ -14,13 +14,14 @@ public static class DailyPlanExporter
         ProjectDto project,
         DateOnly? quarterStart = null,
         DateOnly? quarterEnd = null,
-        double vletPercent = 0.20)
+        double unplannedWorkReserveShare = 0.20,
+        IReadOnlyCollection<string>? roles = null)
     {
-        QuarterCapacity.ValidatePercent(vletPercent);
+        QuarterCapacity.ValidateReserveShare(unplannedWorkReserveShare);
 
-        // Окно квартала определяется от даты плана, если не передано явно.
-        var qs = quarterStart ?? StartOfQuarter(project.ProjectStart);
-        var qe = quarterEnd ?? qs.AddMonths(3).AddDays(-1);
+        var (defaultStart, defaultEnd) = CalendarQuarter.Containing(project.ProjectStart);
+        var qs = quarterStart ?? defaultStart;
+        var qe = quarterEnd ?? (quarterStart.HasValue ? CalendarQuarter.Containing(qs).End : defaultEnd);
 
         var leaves = new List<TaskDto>();
         CollectLeaves(project.RootTask, leaves);
@@ -35,9 +36,12 @@ public static class DailyPlanExporter
         var globalNonWorking = WorkingDayCalculator.ExpandPeriods(project.GlobalCalendar?.NonWorkingDays);
         var globalWorking = WorkingDayCalculator.ExpandPeriods(project.GlobalCalendar?.WorkingDays);
 
+        var resources = project.Resources.Where(r => roles is null || roles.Contains(r.Role)).ToList();
+
         var endDate = project.ProjectStart;
-        foreach (var tasks in tasksByResource.Values)
+        foreach (var resource in resources)
         {
+            if (!tasksByResource.TryGetValue(resource.Name, out var tasks)) continue;
             foreach (var task in tasks)
             {
                 if (task.Plan!.PlannedFinish!.Value > endDate)
@@ -51,11 +55,11 @@ public static class DailyPlanExporter
         var totalAvail = 0;
         var totalBiz = 0;
         var totalNonBiz = 0;
-        var totalVlet = 0;
+        var totalReserve = 0;
         var totalIdle = 0;
         var totalOverload = 0;
 
-        foreach (var resource in project.Resources)
+        foreach (var resource in resources)
         {
             var tasks = tasksByResource.GetValueOrDefault(resource.Name) ?? [];
 
@@ -98,31 +102,51 @@ public static class DailyPlanExporter
 
             var (qAvail, qBiz, qNonBiz) = CountQuarter(
                 tasks, resource, qs, qe, globalNonWorking, globalWorking, resourceNonWorking, resourceWorking);
-            var allocation = QuarterCapacity.Calculate(qAvail, qBiz, qNonBiz, vletPercent);
+            var allocation = QuarterCapacity.Calculate(qAvail, qBiz, qNonBiz, unplannedWorkReserveShare);
 
             totalAvail += qAvail;
             totalBiz += qBiz;
             totalNonBiz += qNonBiz;
-            totalVlet += allocation.Quota;
+            totalReserve += allocation.Quota;
             totalIdle += allocation.Idle;
             totalOverload += allocation.Overload;
 
+            var unassigned = qAvail - qBiz - qNonBiz;
+            var coveredReserve = Math.Min(allocation.Quota, unassigned);
             body.AppendLine($"Рабочих дней всего: {qAvail};  из них на бизнес: {qBiz} ({Pct(qBiz, allocation.Capacity)})");
             body.AppendLine($"не на бизнес: {qNonBiz} ({Pct(qNonBiz, allocation.Capacity)});  " +
-                            $"резерв на влёты: {allocation.Quota} ({vletPercent:P0});  " +
-                            $"ничем не занят: {allocation.Idle} ({Pct(allocation.Idle, allocation.Capacity)})" +
-                            (allocation.Overload > 0 ? $";  ПЕРЕГРУЗ +{allocation.Overload}" : string.Empty));
+                            $"без задач: {unassigned};  " +
+                            $"резерв: цель {allocation.Quota} ({unplannedWorkReserveShare:P0}), обеспечено {coveredReserve};  " +
+                            $"свободно сверх резерва: {allocation.Idle} ({Pct(allocation.Idle, allocation.Capacity)})" +
+                            (allocation.Overload > 0
+                                ? $";  ДЕФИЦИТ РЕЗЕРВА +{allocation.Overload} " +
+                                  $"({Pct(allocation.Overload, allocation.Capacity)} ёмкости)"
+                                : string.Empty));
             body.AppendLine();
         }
 
-        var totalCapacity = totalAvail - totalVlet;
+        var totalCapacity = totalAvail - totalReserve;
+        var totalUnassigned = totalAvail - totalBiz - totalNonBiz;
+        var totalCoveredReserve = totalReserve - totalOverload;
 
         var sb = new StringBuilder();
-        sb.AppendLine($"===== Квартал {FormatDateShort(qs)} – {FormatDateShort(qe)}, квота «влёт» {vletPercent:P0} =====");
+        sb.AppendLine($"===== Сводка за период {FormatDateShort(qs)} – {FormatDateShort(qe)}, " +
+                      $"резерв {unplannedWorkReserveShare:P0} =====");
+        sb.AppendLine(roles is null ? "Роли: все" : $"Роли: {string.Join(", ", roles)}");
+        sb.AppendLine("Доли бизнеса и остальных задач считаются от ёмкости после резерва.");
+        sb.AppendLine("При дефиците резерва сумма долей задач превышает 100% на величину дефицита.");
         sb.AppendLine($"ИТОГО: рабочих дней {totalAvail};  бизнес {totalBiz} ({Pct(totalBiz, totalCapacity)});  " +
                       $"не-бизнес {totalNonBiz} ({Pct(totalNonBiz, totalCapacity)});  " +
-                      $"влёты {totalVlet} ({vletPercent:P0});  не занят {totalIdle} ({Pct(totalIdle, totalCapacity)})" +
-                      (totalOverload > 0 ? $";  ПЕРЕГРУЗ ПО ЛЮДЯМ +{totalOverload}" : string.Empty));
+                      $"без задач {totalUnassigned};  " +
+                      $"резерв: цель {totalReserve} ({unplannedWorkReserveShare:P0}), обеспечено {totalCoveredReserve};  " +
+                      $"свободно сверх резерва {totalIdle} ({Pct(totalIdle, totalCapacity)})" +
+                      (totalOverload > 0
+                          ? $";  ДЕФИЦИТ РЕЗЕРВА ПО ЛЮДЯМ +{totalOverload} " +
+                            $"({Pct(totalOverload, totalCapacity)} ёмкости)"
+                          : string.Empty));
+        sb.AppendLine($"От всех рабочих дней: бизнес {Pct(totalBiz, totalAvail)}, " +
+                      $"остальные задачи {Pct(totalNonBiz, totalAvail)}, " +
+                      $"без задач {Pct(totalUnassigned, totalAvail)}.");
         sb.AppendLine();
         sb.Append(body.ToString());
 
@@ -205,12 +229,6 @@ public static class DailyPlanExporter
 
     private static string Pct(int value, int total) =>
         total > 0 ? $"{100.0 * value / total:0.0}%" : "0.0%";
-
-    private static DateOnly StartOfQuarter(DateOnly date)
-    {
-        var startMonth = ((date.Month - 1) / 3) * 3 + 1;
-        return new DateOnly(date.Year, startMonth, 1);
-    }
 
     private static string FormatDate(DateOnly day) => $"{day:dd.MM.yyyy}, {DayAbbreviation(day.DayOfWeek)}.";
 

@@ -14,10 +14,10 @@ public static class QuarterDistributionExporter
         ProjectDto project,
         DateOnly quarterStart,
         DateOnly quarterEnd,
-        double vletPercent = 0.20,
+        double unplannedWorkReserveShare = 0.20,
         IReadOnlyCollection<string>? roles = null)
     {
-        QuarterCapacity.ValidatePercent(vletPercent);
+        QuarterCapacity.ValidateReserveShare(unplannedWorkReserveShare);
 
         var leaves = new List<TaskDto>();
         CollectLeaves(project.RootTask, leaves);
@@ -38,9 +38,11 @@ public static class QuarterDistributionExporter
             .ToList();
 
         var sb = new StringBuilder();
-        sb.AppendLine($"===== Распределение по кварталу {FormatDate(quarterStart)} – {FormatDate(quarterEnd)} =====");
+        sb.AppendLine($"===== Распределение за период {FormatDate(quarterStart)} – {FormatDate(quarterEnd)} =====");
         sb.AppendLine(roles is null ? "Роли: все" : $"Роли: {string.Join(", ", roles)}");
-        sb.AppendLine($"Квота «влёт»: {vletPercent:P0} (вычитается из ёмкости)");
+        sb.AppendLine($"Целевой резерв на внеплановые работы: {unplannedWorkReserveShare:P0} от рабочих дней");
+        sb.AppendLine("Доли бизнеса и остальных задач ниже считаются от ёмкости после резерва.");
+        sb.AppendLine("При дефиците резерва сумма долей задач превышает 100% на величину дефицита.");
         sb.AppendLine();
 
         var tAvail = 0;
@@ -55,7 +57,7 @@ public static class QuarterDistributionExporter
             var (avail, biz, nonBiz) = Count(resource, quarterStart, quarterEnd,
                 tasksByResource.GetValueOrDefault(resource.Name) ?? [], globalNonWorking, globalWorking);
 
-            var allocation = QuarterCapacity.Calculate(avail, biz, nonBiz, vletPercent);
+            var allocation = QuarterCapacity.Calculate(avail, biz, nonBiz, unplannedWorkReserveShare);
 
             tAvail += avail;
             tBiz += biz;
@@ -73,6 +75,9 @@ public static class QuarterDistributionExporter
         var tCapacity = tAvail - tQuota;
         AppendResourceLine(sb, "Всего", tAvail, tQuota, tCapacity, tBiz, tNonBiz, tIdle, tOverload,
             total: true);
+        sb.AppendLine($"От всех рабочих дней: бизнес {Percent(tBiz, tAvail):0.0}%, " +
+                      $"остальные задачи {Percent(tNonBiz, tAvail):0.0}%, " +
+                      $"без задач {Percent(tAvail - tBiz - tNonBiz, tAvail):0.0}%.");
 
         return sb.ToString();
     }
@@ -130,14 +135,19 @@ public static class QuarterDistributionExporter
     {
         var pctBiz = capacity > 0 ? 100.0 * biz / capacity : 0;
         var pctNonBiz = capacity > 0 ? 100.0 * nonBiz / capacity : 0;
+        var unassigned = avail - biz - nonBiz;
+        var coveredReserve = total ? quota - overload : Math.Min(quota, unassigned);
         var overloadSuffix = overload > 0
-            ? $"  {(total ? "ПЕРЕГРУЗ ПО ЛЮДЯМ" : "ПЕРЕГРУЗ")} +{overload}"
+            ? $"  {(total ? "ДЕФИЦИТ РЕЗЕРВА ПО ЛЮДЯМ" : "ДЕФИЦИТ РЕЗЕРВА")} " +
+              $"+{overload} ({Percent(overload, capacity):0.0}% ёмкости)"
             : string.Empty;
 
         sb.AppendLine(
-            $"{name,-10} доступно={avail,3}  влёт={quota,3}  ёмкость={capacity,3}  " +
+            $"{name,-10} доступно={avail,3}  резерв: цель={quota,3}, обеспечено={coveredReserve,3}  " +
+            $"ёмкость={capacity,3}  " +
             $"бизнес={biz,3} ({pctBiz,5:0.0}%)  не-бизнес={nonBiz,3} ({pctNonBiz,5:0.0}%)  " +
-            $"простой={idle,3} ({(capacity > 0 ? 100.0 * idle / capacity : 0),5:0.0}%){overloadSuffix}");
+            $"без задач={unassigned,3}  свободно сверх резерва={idle,3} " +
+            $"({Percent(idle, capacity),5:0.0}%){overloadSuffix}");
     }
 
     private static void CollectLeaves(TaskDto task, List<TaskDto> leaves)
@@ -156,4 +166,6 @@ public static class QuarterDistributionExporter
     }
 
     private static string FormatDate(DateOnly day) => $"{day:dd.MM.yyyy}";
+
+    private static double Percent(int value, int total) => total > 0 ? 100.0 * value / total : 0;
 }

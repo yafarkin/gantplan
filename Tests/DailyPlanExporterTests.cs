@@ -48,13 +48,13 @@ public sealed class DailyPlanExporterTests
     }
 
     // ru-RU, чтобы разделитель десятичной дроби в процентах был детерминированным.
-    private static string Build(ProjectDto project, double vletPercent = 0.20)
+    private static string Build(ProjectDto project, double unplannedWorkReserveShare = 0.20)
     {
         var prev = CultureInfo.CurrentCulture;
         CultureInfo.CurrentCulture = new CultureInfo("ru-RU");
         try
         {
-            return DailyPlanExporter.Build(project, Start, End, vletPercent);
+            return DailyPlanExporter.Build(project, Start, End, unplannedWorkReserveShare);
         }
         finally
         {
@@ -70,8 +70,9 @@ public sealed class DailyPlanExporterTests
         Assert.That(report, Does.Contain("рабочих дней 100"));
         Assert.That(report, Does.Contain("бизнес 15"));
         Assert.That(report, Does.Contain("не-бизнес 10"));
-        Assert.That(report, Does.Contain("влёты 20"));
-        Assert.That(report, Does.Contain("не занят 55"));
+        Assert.That(report, Does.Contain("резерв: цель 20"));
+        Assert.That(report, Does.Contain("без задач 75"));
+        Assert.That(report, Does.Contain("свободно сверх резерва 55"));
     }
 
     [Test]
@@ -82,7 +83,7 @@ public sealed class DailyPlanExporterTests
         // Ёмкость = 100 − 20 (влёты) = 80: 15/80=18,8%, 10/80=12,5%, 55/80=68,8%.
         Assert.That(report, Does.Contain("бизнес 15 (18,8%)"));
         Assert.That(report, Does.Contain("не-бизнес 10 (12,5%)"));
-        Assert.That(report, Does.Contain("не занят 55 (68,8%)"));
+        Assert.That(report, Does.Contain("свободно сверх резерва 55 (68,8%)"));
     }
 
     [Test]
@@ -91,19 +92,19 @@ public sealed class DailyPlanExporterTests
         // Бизнес 70 + техника 30 = 100 > ёмкость 80 → перегруз +20, свободного нет.
         var report = Build(BuildProject(bizDays: 70, techDays: 30));
 
-        Assert.That(report, Does.Contain("ПЕРЕГРУЗ +20"));
-        Assert.That(report, Does.Contain("не занят 0"));
+        Assert.That(report, Does.Contain("ДЕФИЦИТ РЕЗЕРВА +20"));
+        Assert.That(report, Does.Contain("свободно сверх резерва 0"));
     }
 
     [Test]
     public void ZeroQuota_MeansNoVletDeduction()
     {
-        var report = Build(BuildProject(bizDays: 15, techDays: 10), vletPercent: 0.0);
+        var report = Build(BuildProject(bizDays: 15, techDays: 10), unplannedWorkReserveShare: 0.0);
 
         // Без влётов ёмкость = 100: бизнес 15/100, техника 10/100, свободно 75/100.
-        Assert.That(report, Does.Contain("влёты 0"));
+        Assert.That(report, Does.Contain("резерв: цель 0"));
         Assert.That(report, Does.Contain("бизнес 15 (15,0%)"));
-        Assert.That(report, Does.Contain("не занят 75 (75,0%)"));
+        Assert.That(report, Does.Contain("свободно сверх резерва 75 (75,0%)"));
     }
 
     [Test]
@@ -116,11 +117,20 @@ public sealed class DailyPlanExporterTests
         {
             var project = BuildProject(bizDays: 15, techDays: 10);
             var report = DailyPlanExporter.Build(project);
-            Assert.That(report, Does.Contain("Квартал 01.10.2026 – 31.12.2026"));
+            Assert.That(report, Does.Contain("Сводка за период 01.10.2026 – 31.12.2026"));
         }
         finally
         {
             CultureInfo.CurrentCulture = prev;
         }
+    }
+
+    [Test]
+    public void ExplicitStartWithoutEnd_StopsAtEndOfCalendarQuarter()
+    {
+        var project = BuildProject(bizDays: 15, techDays: 10);
+        var report = DailyPlanExporter.Build(project, quarterStart: new DateOnly(2026, 11, 12));
+
+        Assert.That(report, Does.Contain("Сводка за период 12.11.2026 – 31.12.2026"));
     }
 }

@@ -87,15 +87,15 @@ public sealed class QuarterCapacityTests
         Assert.Multiple(() =>
         {
             Assert.That(line, Does.Contain("доступно=100"));
-            Assert.That(line, Does.Contain("влёт= 20"));
+            Assert.That(line, Does.Contain("резерв: цель= 20, обеспечено= 20"));
             Assert.That(line, Does.Contain("ёмкость= 80"));
             Assert.That(line, Does.Contain("бизнес= 30 ( 37,5%)"));
             Assert.That(line, Does.Contain("не-бизнес= 20 ( 25,0%)"));
-            Assert.That(line, Does.Contain("простой= 30 ( 37,5%)"));
-            Assert.That(QuarterLine(quarter, "Всего"), Does.Contain("простой= 30 ( 37,5%)"));
+            Assert.That(line, Does.Contain("без задач= 50  свободно сверх резерва= 30 ( 37,5%)"));
+            Assert.That(QuarterLine(quarter, "Всего"), Does.Contain("свободно сверх резерва= 30 ( 37,5%)"));
             Assert.That(daily, Does.Contain("бизнес 30 (37,5%)"));
             Assert.That(daily, Does.Contain("не-бизнес 20 (25,0%)"));
-            Assert.That(daily, Does.Contain("не занят 30 (37,5%)"));
+            Assert.That(daily, Does.Contain("свободно сверх резерва 30 (37,5%)"));
         });
     }
 
@@ -106,10 +106,12 @@ public sealed class QuarterCapacityTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(QuarterLine(quarter, "Dev1"), Does.Contain("простой=  0 (  0,0%)  ПЕРЕГРУЗ +20"));
-            Assert.That(QuarterLine(quarter, "Всего"), Does.Contain("ПЕРЕГРУЗ ПО ЛЮДЯМ +20"));
-            Assert.That(DailySection(daily, "Dev1"), Does.Contain("ничем не занят: 0 (0,0%);  ПЕРЕГРУЗ +20"));
-            Assert.That(daily, Does.Contain("не занят 0 (0,0%);  ПЕРЕГРУЗ ПО ЛЮДЯМ +20"));
+            Assert.That(QuarterLine(quarter, "Dev1"), Does.Contain("обеспечено=  0"));
+            Assert.That(QuarterLine(quarter, "Dev1"), Does.Contain("свободно сверх резерва=  0 (  0,0%)  ДЕФИЦИТ РЕЗЕРВА +20"));
+            Assert.That(QuarterLine(quarter, "Всего"), Does.Contain("ДЕФИЦИТ РЕЗЕРВА ПО ЛЮДЯМ +20"));
+            Assert.That(QuarterLine(quarter, "Всего"), Does.Contain("+20 (25,0% ёмкости)"));
+            Assert.That(DailySection(daily, "Dev1"), Does.Contain("обеспечено 0;  свободно сверх резерва: 0 (0,0%);  ДЕФИЦИТ РЕЗЕРВА +20"));
+            Assert.That(daily, Does.Contain("свободно сверх резерва 0 (0,0%);  ДЕФИЦИТ РЕЗЕРВА ПО ЛЮДЯМ +20"));
         });
     }
 
@@ -120,12 +122,14 @@ public sealed class QuarterCapacityTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(QuarterLine(quarter, "Dev1"), Does.Contain("ПЕРЕГРУЗ +10"));
-            Assert.That(QuarterLine(quarter, "Dev2"), Does.Contain("простой= 80 (100,0%)"));
-            Assert.That(QuarterLine(quarter, "Всего"), Does.Contain("простой= 80 ( 50,0%)  ПЕРЕГРУЗ ПО ЛЮДЯМ +10"));
-            Assert.That(DailySection(daily, "Dev1"), Does.Contain("ПЕРЕГРУЗ +10"));
-            Assert.That(DailySection(daily, "Dev2"), Does.Contain("ничем не занят: 80 (100,0%)"));
-            Assert.That(daily, Does.Contain("не занят 80 (50,0%);  ПЕРЕГРУЗ ПО ЛЮДЯМ +10"));
+            Assert.That(QuarterLine(quarter, "Dev1"), Does.Contain("ДЕФИЦИТ РЕЗЕРВА +10"));
+            Assert.That(QuarterLine(quarter, "Dev2"), Does.Contain("свободно сверх резерва= 80 (100,0%)"));
+            Assert.That(QuarterLine(quarter, "Всего"), Does.Contain("обеспечено= 30"));
+            Assert.That(QuarterLine(quarter, "Всего"), Does.Contain("свободно сверх резерва= 80 ( 50,0%)  ДЕФИЦИТ РЕЗЕРВА ПО ЛЮДЯМ +10"));
+            Assert.That(QuarterLine(quarter, "Всего"), Does.Contain("+10 (6,3% ёмкости)"));
+            Assert.That(DailySection(daily, "Dev1"), Does.Contain("ДЕФИЦИТ РЕЗЕРВА +10"));
+            Assert.That(DailySection(daily, "Dev2"), Does.Contain("свободно сверх резерва: 80 (100,0%)"));
+            Assert.That(daily, Does.Contain("свободно сверх резерва 80 (50,0%);  ДЕФИЦИТ РЕЗЕРВА ПО ЛЮДЯМ +10"));
         });
     }
 
@@ -139,9 +143,9 @@ public sealed class QuarterCapacityTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(QuarterLine(quarter, "Всего"), Does.Contain("доступно=  6  влёт=  2  ёмкость=  4"));
+            Assert.That(QuarterLine(quarter, "Всего"), Does.Contain("доступно=  6  резерв: цель=  2, обеспечено=  2  ёмкость=  4"));
             Assert.That(daily, Does.Contain("ИТОГО: рабочих дней 6"));
-            Assert.That(daily, Does.Contain("влёты 2"));
+            Assert.That(daily, Does.Contain("резерв: цель 2"));
         });
     }
 
@@ -162,9 +166,9 @@ public sealed class QuarterCapacityTests
         Assert.Multiple(() =>
         {
             Assert.That(QuarterLine(quarter, "Dev1"),
-                Does.Contain("доступно= 50  влёт= 10  ёмкость= 40"));
+                Does.Contain("доступно= 50  резерв: цель= 10, обеспечено= 10  ёмкость= 40"));
             Assert.That(DailySection(daily, "Dev1"), Does.Contain("Рабочих дней всего: 50"));
-            Assert.That(daily, Does.Contain("влёты 10"));
+            Assert.That(daily, Does.Contain("резерв: цель 10"));
         });
     }
 
@@ -179,9 +183,57 @@ public sealed class QuarterCapacityTests
         Assert.Multiple(() =>
         {
             Assert.That(QuarterLine(quarter, "Dev1"),
-                Does.Contain("доступно= 10  влёт=  2  ёмкость=  8"));
+                Does.Contain("доступно= 10  резерв: цель=  2, обеспечено=  2  ёмкость=  8"));
             Assert.That(daily, Does.Contain("ИТОГО: рабочих дней 10"));
-            Assert.That(daily, Does.Contain("влёты 2"));
+            Assert.That(daily, Does.Contain("резерв: цель 2"));
+        });
+    }
+
+    [Test]
+    public void CalendarQuarterEndsOnLastDayOfDecember()
+    {
+        var (start, end) = CalendarQuarter.Containing(new DateOnly(2026, 11, 12));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(start, Is.EqualTo(new DateOnly(2026, 10, 1)));
+            Assert.That(end, Is.EqualTo(new DateOnly(2026, 12, 31)));
+        });
+    }
+
+    [Test]
+    public void DailyAndQuarterReportsCanUseTheSameRoleFilter()
+    {
+        var project = Project(("Dev1", 30, 0), ("Dev2", 10, 0)) with
+        {
+            Resources =
+            [
+                new ResourceDto { Name = "Dev1", Role = "DEV" },
+                new ResourceDto { Name = "Dev2", Role = "QA" }
+            ]
+        };
+        string quarter;
+        string daily;
+        var previous = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = new CultureInfo("ru-RU");
+        try
+        {
+            quarter = QuarterDistributionExporter.Build(project, Start, End, roles: ["DEV"]);
+            daily = DailyPlanExporter.Build(project, Start, End, roles: ["DEV"]);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previous;
+        }
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(quarter, Does.Contain("Роли: DEV"));
+            Assert.That(daily, Does.Contain("Роли: DEV"));
+            Assert.That(quarter, Does.Not.Contain("Dev2"));
+            Assert.That(daily, Does.Not.Contain("=== Dev2 ==="));
+            Assert.That(QuarterLine(quarter, "Всего"), Does.Contain("доступно=100"));
+            Assert.That(daily, Does.Contain("ИТОГО: рабочих дней 100"));
         });
     }
 }

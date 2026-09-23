@@ -39,9 +39,8 @@ if (!s.Solve(project, 30))
     return 1;
 }
 
-// Квартал определяется от даты начала плана (без хардкода дат).
-var qs = project.ProjectStart;
-var qe = qs.AddMonths(3).AddDays(-1);
+// Берём календарный квартал, в который попадает начало плана.
+var (qs, qe) = CalendarQuarter.Containing(project.ProjectStart);
 
 var quarterReport = QuarterDistributionExporter.Build(project, qs, qe);
 Console.WriteLine(quarterReport);
