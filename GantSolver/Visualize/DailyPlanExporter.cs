@@ -52,12 +52,7 @@ public static class DailyPlanExporter
         }
 
         var body = new StringBuilder();
-        var totalAvail = 0;
-        var totalBiz = 0;
-        var totalNonBiz = 0;
-        var totalReserve = 0;
-        var totalIdle = 0;
-        var totalOverload = 0;
+        var rows = new List<CapacityRow>();
 
         foreach (var resource in resources)
         {
@@ -102,51 +97,28 @@ public static class DailyPlanExporter
 
             var (qAvail, qBiz, qNonBiz) = CountQuarter(
                 tasks, resource, qs, qe, globalNonWorking, globalWorking, resourceNonWorking, resourceWorking);
-            var allocation = QuarterCapacity.Calculate(qAvail, qBiz, qNonBiz, unplannedWorkReserveShare);
+            var row = new CapacityRow(resource.Name, CapacityReport.NormalizeRole(resource.Role),
+                qAvail, qBiz, qNonBiz,
+                QuarterCapacity.Calculate(qAvail, qBiz, qNonBiz, unplannedWorkReserveShare));
+            rows.Add(row);
 
-            totalAvail += qAvail;
-            totalBiz += qBiz;
-            totalNonBiz += qNonBiz;
-            totalReserve += allocation.Quota;
-            totalIdle += allocation.Idle;
-            totalOverload += allocation.Overload;
-
-            var unassigned = qAvail - qBiz - qNonBiz;
-            var coveredReserve = Math.Min(allocation.Quota, unassigned);
-            body.AppendLine($"Рабочих дней всего: {qAvail};  из них на бизнес: {qBiz} ({Pct(qBiz, allocation.Capacity)})");
-            body.AppendLine($"не на бизнес: {qNonBiz} ({Pct(qNonBiz, allocation.Capacity)});  " +
-                            $"без задач: {unassigned};  " +
-                            $"резерв: цель {allocation.Quota} ({unplannedWorkReserveShare:P0}), обеспечено {coveredReserve};  " +
-                            $"свободно сверх резерва: {allocation.Idle} ({Pct(allocation.Idle, allocation.Capacity)})" +
-                            (allocation.Overload > 0
-                                ? $";  ДЕФИЦИТ РЕЗЕРВА +{allocation.Overload} " +
-                                  $"({Pct(allocation.Overload, allocation.Capacity)} ёмкости)"
-                                : string.Empty));
+            var allocation = row.Allocation;
+            body.AppendLine($"{resource.Name}, итог за период: рабочих дней {qAvail} = " +
+                            $"{allocation.Quota} резерв + {allocation.Capacity} ёмкость.");
+            body.AppendLine($"  бизнес {qBiz} ({Pct(qBiz, allocation.Capacity)} ёмкости);  " +
+                            $"не-бизнес {qNonBiz} ({Pct(qNonBiz, allocation.Capacity)});  " +
+                            $"свободно сверх резерва {allocation.Idle} ({Pct(allocation.Idle, allocation.Capacity)})");
+            body.AppendLine(allocation.Overload > 0
+                ? $"  резерв обеспечен: {row.CoveredReserve} из {allocation.Quota};  " +
+                  $"НЕ ХВАТАЕТ {allocation.Overload} дн."
+                : $"  резерв обеспечен: {row.CoveredReserve} из {allocation.Quota}.");
             body.AppendLine();
         }
 
-        var totalCapacity = totalAvail - totalReserve;
-        var totalUnassigned = totalAvail - totalBiz - totalNonBiz;
-        var totalCoveredReserve = totalReserve - totalOverload;
-
         var sb = new StringBuilder();
-        sb.AppendLine($"===== Сводка за период {FormatDateShort(qs)} – {FormatDateShort(qe)}, " +
-                      $"резерв {unplannedWorkReserveShare:P0} =====");
+        sb.AppendLine($"===== Сводка за период {FormatDateShort(qs)} – {FormatDateShort(qe)} =====");
         sb.AppendLine(roles is null ? "Роли: все" : $"Роли: {string.Join(", ", roles)}");
-        sb.AppendLine("Доли бизнеса и остальных задач считаются от ёмкости после резерва.");
-        sb.AppendLine("При дефиците резерва сумма долей задач превышает 100% на величину дефицита.");
-        sb.AppendLine($"ИТОГО: рабочих дней {totalAvail};  бизнес {totalBiz} ({Pct(totalBiz, totalCapacity)});  " +
-                      $"не-бизнес {totalNonBiz} ({Pct(totalNonBiz, totalCapacity)});  " +
-                      $"без задач {totalUnassigned};  " +
-                      $"резерв: цель {totalReserve} ({unplannedWorkReserveShare:P0}), обеспечено {totalCoveredReserve};  " +
-                      $"свободно сверх резерва {totalIdle} ({Pct(totalIdle, totalCapacity)})" +
-                      (totalOverload > 0
-                          ? $";  ДЕФИЦИТ РЕЗЕРВА ПО ЛЮДЯМ +{totalOverload} " +
-                            $"({Pct(totalOverload, totalCapacity)} ёмкости)"
-                          : string.Empty));
-        sb.AppendLine($"От всех рабочих дней: бизнес {Pct(totalBiz, totalAvail)}, " +
-                      $"остальные задачи {Pct(totalNonBiz, totalAvail)}, " +
-                      $"без задач {Pct(totalUnassigned, totalAvail)}.");
+        sb.Append(CapacityReport.Render(rows, unplannedWorkReserveShare));
         sb.AppendLine();
         sb.Append(body.ToString());
 
@@ -228,7 +200,7 @@ public static class DailyPlanExporter
     }
 
     private static string Pct(int value, int total) =>
-        total > 0 ? $"{100.0 * value / total:0.0}%" : "0.0%";
+        total > 0 ? $"{(int)Math.Round(100.0 * value / total, MidpointRounding.AwayFromZero)}%" : "0%";
 
     private static string FormatDate(DateOnly day) => $"{day:dd.MM.yyyy}, {DayAbbreviation(day.DayOfWeek)}.";
 

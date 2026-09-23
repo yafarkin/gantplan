@@ -67,12 +67,11 @@ public sealed class DailyPlanExporterTests
     {
         var report = Build(BuildProject(bizDays: 15, techDays: 10));
 
-        Assert.That(report, Does.Contain("рабочих дней 100"));
+        Assert.That(report, Does.Contain($"{Person}, итог за период: рабочих дней 100 = 20 резерв + 80 ёмкость."));
         Assert.That(report, Does.Contain("бизнес 15"));
         Assert.That(report, Does.Contain("не-бизнес 10"));
-        Assert.That(report, Does.Contain("резерв: цель 20"));
-        Assert.That(report, Does.Contain("без задач 75"));
         Assert.That(report, Does.Contain("свободно сверх резерва 55"));
+        Assert.That(report, Does.Contain("Резерв: цель 20 дней, обеспечено 20."));
     }
 
     [Test]
@@ -80,10 +79,9 @@ public sealed class DailyPlanExporterTests
     {
         var report = Build(BuildProject(bizDays: 15, techDays: 10));
 
-        // Ёмкость = 100 − 20 (влёты) = 80: 15/80=18,8%, 10/80=12,5%, 55/80=68,8%.
-        Assert.That(report, Does.Contain("бизнес 15 (18,8%)"));
-        Assert.That(report, Does.Contain("не-бизнес 10 (12,5%)"));
-        Assert.That(report, Does.Contain("свободно сверх резерва 55 (68,8%)"));
+        // Ёмкость = 100 − 20 (влёты) = 80: 15/80=19%, 10/80=13%, 55/80=69%.
+        Assert.That(report, Does.Contain("бизнес 15 (19% ёмкости);  не-бизнес 10 (13%);  свободно сверх резерва 55 (69%)"));
+        Assert.That(report, Does.Contain("Итого: бизнес 15 из 80 дней ёмкости (19%), это 15% от всех 100 рабочих дней."));
     }
 
     [Test]
@@ -92,7 +90,8 @@ public sealed class DailyPlanExporterTests
         // Бизнес 70 + техника 30 = 100 > ёмкость 80 → перегруз +20, свободного нет.
         var report = Build(BuildProject(bizDays: 70, techDays: 30));
 
-        Assert.That(report, Does.Contain("ДЕФИЦИТ РЕЗЕРВА +20"));
+        Assert.That(report, Does.Contain("резерв обеспечен: 0 из 20;  НЕ ХВАТАЕТ 20 дн."));
+        Assert.That(report, Does.Contain("Задачами занято 100 дней при ёмкости 80, перебор 20 дней."));
         Assert.That(report, Does.Contain("свободно сверх резерва 0"));
     }
 
@@ -102,9 +101,9 @@ public sealed class DailyPlanExporterTests
         var report = Build(BuildProject(bizDays: 15, techDays: 10), unplannedWorkReserveShare: 0.0);
 
         // Без влётов ёмкость = 100: бизнес 15/100, техника 10/100, свободно 75/100.
-        Assert.That(report, Does.Contain("резерв: цель 0"));
-        Assert.That(report, Does.Contain("бизнес 15 (15,0%)"));
-        Assert.That(report, Does.Contain("свободно сверх резерва 75 (75,0%)"));
+        Assert.That(report, Does.Contain("рабочих дней 100 = 0 резерв + 100 ёмкость."));
+        Assert.That(report, Does.Contain("бизнес 15 (15% ёмкости)"));
+        Assert.That(report, Does.Contain("свободно сверх резерва 75 (75%)"));
     }
 
     [Test]
