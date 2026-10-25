@@ -133,6 +133,7 @@ public static class TaskTreeDataPreparer
             task.Plan?.PlannedFinish,
             statusLabel,
             muted,
+            !task.HasChild && task.Plan?.AwaitingClosure == true,
             colors.TryGetValue(task, out var color) ? color : TaskColorPalette.StructuralColor,
             children);
     }
@@ -189,6 +190,10 @@ public static class TaskTreeDataPreparer
         string? StatusLabel,
         // приглушить строку и бар (выключена, на паузе, завершена)
         bool Muted,
+        // по плану уже должна была закончиться, но закрытие не подтверждено
+        // (см. TaskPlanDto.AwaitingClosure) - бар выделяется и в свёрнутом
+        // треке исполнителя, где метки статуса не видно
+        bool AwaitingClosure,
         // цвет бара (hex): у эпика - его собственный цвет, у задач внутри
         // эпика - оттенки того же цвета (см. TaskColorPalette)
         string Color,

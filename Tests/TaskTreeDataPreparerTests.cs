@@ -91,4 +91,20 @@ public class TaskTreeDataPreparerTests
             File.Delete(output);
         }
     }
+
+    // Задача, ждущая подтверждения закрытия: в данных для таймлайна - флаг
+    // (по нему бар выделяется даже в свёрнутом треке) и метка статуса, но
+    // не приглушение - это задача, требующая внимания, а не завершённая.
+    [Test]
+    public void AwaitingClosureTaskShouldBeFlaggedNotMutedTest()
+    {
+        var project = CalendarProject();
+        project.RootTask.Plan!.AwaitingClosure = true;
+
+        var root = TaskTreeDataPreparer.Prepare(project).Root;
+
+        Assert.That(root.AwaitingClosure, Is.True);
+        Assert.That(root.StatusLabel, Is.EqualTo("ждёт подтверждения закрытия"));
+        Assert.That(root.Muted, Is.False);
+    }
 }

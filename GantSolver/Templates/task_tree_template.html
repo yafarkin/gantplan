@@ -242,6 +242,18 @@
             color: #842029;
         }
 
+        /* в свёрнутом треке исполнителя - сколько его задач ждут
+           подтверждения закрытия (самих меток статуса там не видно) */
+        .closure-badge {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            background: #dc3545;
+            color: #fff;
+        }
+
         mark {
             background: #fff3a0;
             padding: 0;
@@ -336,6 +348,10 @@
     общий нерабочий день (выходной/праздник) - штрихуется вся строка;
     <svg height="12" width="24"><rect fill="#1f77b4" height="12" width="24"></rect><rect fill="url(#hatch-personal)" height="12" width="24"></rect></svg>
     личный нерабочий день исполнителя (отпуск и т.п.) - штрихуется зеркальным узором только сама задача; если человек работает в общий выходной (личный рабочий день), задача в этот день не штрихуется;
+    <span id="legend-closure" style="display: none;">
+        <svg height="12" width="24"><rect fill="#1f77b4" height="10" stroke="#dc3545" stroke-width="2" width="22" x="1" y="1"></rect></svg>
+        ждёт подтверждения закрытия (по плану уже должна была закончиться, но Completed не отмечен);
+    </span>
     <span id="legend-today" style="display: none;">
         <svg height="12" width="24"><rect fill="rgba(220,53,69,.18)" height="12" width="24"></rect></svg>
         дата среза ("сегодня")
@@ -399,6 +415,14 @@
     }
 
     const globalNonWorkingSet = new Set(globalNonWorking);
+
+    // Склонение по числу: plural(5, 'задача', 'задачи', 'задач') -> 'задач'.
+    function plural(n, one, few, many) {
+        const mod10 = n % 10, mod100 = n % 100;
+        if (mod10 === 1 && mod100 !== 11) return one;
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+        return many;
+    }
 
     function isGlobalNonWorking(d) {
         return globalNonWorkingSet.has(ymdLocal(d));
@@ -496,7 +520,7 @@
                     Id: `@resource@${name}`,
                     Name: name,
                     JiraKey: null, JiraUrl: null, EpicJiraKey: null, EpicJiraUrl: null, Assignee: null,
-                    Start: null, End: null, StatusLabel: null, Muted: false,
+                    Start: null, End: null, StatusLabel: null, Muted: false, AwaitingClosure: false,
                     // у заголовка ресурса нет своего бара (внутри него
                     // рисуются бары настоящих задач со своими цветами)
                     Color: null,
@@ -700,6 +724,7 @@
         const head = node.EpicJiraKey ? `${node.EpicJiraKey} → ${node.Id} — ${node.Name}` : `${node.Id} — ${node.Name}`;
         const lines = [head, `${fmtDate(node._start)} → ${fmtDate(node._end)}`];
         if (node.Assignee) lines.push(node.Assignee);
+        if (node.AwaitingClosure) lines.push('ждёт подтверждения закрытия');
         return lines.join('\n');
     }
 
@@ -833,6 +858,20 @@
                 .attr('fill', hatch)
                 .attr('pointer-events', 'none');
         });
+
+        // ждёт подтверждения закрытия - красная обводка поверх штриховки,
+        // чтобы такую задачу было видно и в свёрнутом треке исполнителя,
+        // где метки статуса нет
+        if (node.AwaitingClosure) {
+            svg.append('rect')
+                .attr('x', x0 + 1).attr('y', 4)
+                .attr('width', Math.max(0, width - 2)).attr('height', rowHeight - 8)
+                .attr('rx', 3)
+                .attr('fill', 'none')
+                .attr('stroke', '#dc3545')
+                .attr('stroke-width', 2)
+                .attr('pointer-events', 'none');
+        }
     }
 
     function renderBarCell(barCol, node) {
@@ -949,7 +988,13 @@
         // почти всегда одна, лишняя цифра только путает).
         if (collapsedGanttLanes) {
             const taskCount = collapsedGanttLanes.reduce((n, l) => n + l.length, 0);
-            badges.append('span').attr('class', 'assignee-badge').text(`${taskCount} задач`);
+            badges.append('span').attr('class', 'assignee-badge').text(`${taskCount} ${plural(taskCount, 'задача', 'задачи', 'задач')}`);
+            const awaitingCount = collapsedGanttLanes.reduce((n, l) => n + l.filter(t => t.AwaitingClosure).length, 0);
+            if (awaitingCount) {
+                badges.append('span').attr('class', 'closure-badge')
+                    .attr('title', 'по плану уже должны были закончиться, но закрытие не подтверждено')
+                    .text(`${awaitingCount} ${plural(awaitingCount, 'ждёт', 'ждут', 'ждут')} закрытия`);
+            }
         }
 
         // Высота строки заголовка ресурса подстраивается под дорожку Ганта,
@@ -1065,6 +1110,10 @@
     // заметно (>2 недель) отстоит от начала плана; сам план по умолчанию
     // всегда открывается с начала, а не с сегодняшнего дня - это осознанно,
     // кнопка только предлагает быстро туда перескочить, а не делает это сама.
+    if ([...nodeById.values()].some(n => n.AwaitingClosure)) {
+        d3.select('#legend-closure').style('display', null);
+    }
+
     (function wireTodayButton() {
         if (!todayDate) return;
         if (todayInRange) d3.select('#legend-today').style('display', null);
