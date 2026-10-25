@@ -14,9 +14,9 @@ namespace GantPlan.Logic;
 // в даты и разложенные по ресурсам.
 public sealed class Solver
 {
-    // Горизонт планирования в днях от ProjectStart - все start/end переменные
-    // солвера ограничены диапазоном [0, Horizon).
-    private const int Horizon = 180;
+    // Потолок горизонта планирования (~10 лет) - защита от вырожденных
+    // входных данных, а не реальное ограничение.
+    private const int MaxHorizon = 3660;
 
     private ProjectDto _project = null!;
 
@@ -44,6 +44,12 @@ public sealed class Solver
     
     private readonly Dictionary<string, CalendarLogic>  _calendars = new();
 
+    // См. CalcMinStart.
+    private bool _hasAlreadyCompletedWork;
+
+    // См. BuildGreedyPlan.
+    private Dictionary<string, (int Start, int End, string Resource)>? _greedyPlan;
+
     // Итог последнего Solve - для диагностики в консоли. Optimal - лучший
     // план доказан; Feasible - план найден, но лимит времени кончился до
     // доказательства оптимальности (следующий прогон может дать другой);
@@ -52,37 +58,61 @@ public sealed class Solver
     // его нет).
     public CpSolverStatus Status { get; private set; }
 
+    // Статус второго этапа - выбора между равноценными планами (см.
+    // SolveTieBreak); null, если этап не запускался (первый этап не
+    // доказал оптимум или не нашёл план).
+    public CpSolverStatus? TieBreakStatus { get; private set; }
+
     public double ObjectiveValue { get; private set; }
 
     public double WallTimeSeconds { get; private set; }
 
+    // Горизонт планирования в днях от ProjectStart - все start/end переменные
+    // солвера ограничены диапазоном [0, Horizon]. Считается под проект
+    // автоматически (см. CalcHorizon).
+    public int Horizon { get; private set; }
+
     public bool Solve(ProjectDto project, int? maxSeconds = null)
     {
         _project = project;
+        TieBreakStatus = null;
 
         // Разворачивает дерево задач проекта в плоский список задач,
         // которые нужно планировать (с учётом приоритетов/весов).
         _taskAlignment = new TaskAlignment();
         _taskAlignment.Alignment(_project, _weights);
 
-        _model = new CpModel();
-
-        // Строит все переменные и ограничения модели (см. PrepareSolverConstraints).
-        PrepareSolverConstraints();
+        // Горизонт - по жадному плану с запасом (см. CalcHorizon). Если
+        // какая-то задача всё же в него не влезла - удваиваем и строим
+        // модель заново.
+        _hasAlreadyCompletedWork = _taskAlignment.OriginalTasks.Values.Any(t => t.Fact?.IsFinished == true);
+        _greedyPlan = BuildGreedyPlan();
+        Horizon = CalcHorizon();
+        while (true)
+        {
+            try
+            {
+                _model = new CpModel();
+                // Строит все переменные и ограничения модели (см. PrepareSolverConstraints).
+                PrepareSolverConstraints();
+                AddGreedyHints();
+                break;
+            }
+            catch (HorizonExceededException) when (Horizon < MaxHorizon)
+            {
+                Horizon = Math.Min(MaxHorizon, Horizon * 2);
+            }
+        }
 
         // Цель солвера - минимизировать общий срок проекта (makespan, то есть
         // максимальный end среди всех планируемых задач) плюс сумму
         // приоритетных штрафов за поздний старт (см. _weights).
         var makespan = _model.NewIntVar(0, Horizon, "makespan");
         _model.AddMaxEquality(makespan, _taskAlignment.FlattenTasksToSolve.Select(t => _ends[t.Key]).ToArray());
-        _model.Minimize(makespan + LinearExpr.Sum(_priorityObjectives));
+        var objective = makespan + LinearExpr.Sum(_priorityObjectives);
+        _model.Minimize(objective);
 
-        var solver = new CpSolver();
-
-        if (maxSeconds is not null)
-        {
-            solver.StringParameters = $"max_time_in_seconds:{maxSeconds}";
-        }
+        var solver = CreateCpSolver(maxSeconds);
 
         Status = solver.Solve(_model);
         WallTimeSeconds = solver.WallTime();
@@ -92,11 +122,270 @@ public sealed class Solver
         if (solved)
         {
             ObjectiveValue = solver.ObjectiveValue;
+
+            if (Status == CpSolverStatus.Optimal)
+            {
+                solver = SolveTieBreak(solver, objective, maxSeconds);
+            }
+
             PostFillAfterSolve(solver);
         }
 
         return solved;
     }
+
+    private static CpSolver CreateCpSolver(double? maxSeconds)
+    {
+        var solver = new CpSolver();
+
+        if (maxSeconds is not null)
+        {
+            solver.StringParameters = FormattableString.Invariant($"max_time_in_seconds:{maxSeconds}");
+        }
+
+        return solver;
+    }
+
+    // Второй этап. Планов с одной и той же оптимальной целью обычно
+    // несколько (например, две одинаковые задачи одного исполнителя можно
+    // поставить в любом порядке), и солвер выбирает между ними как
+    // получится - после мелкой правки входных данных план "прыгает".
+    // Здесь цель первого этапа фиксируется на найденном оптимуме, и среди
+    // таких планов выбирается однозначный: раньше стартуют задачи, которые
+    // раньше идут в дереве, а при прочих равных берётся исполнитель, который
+    // раньше в списке Resources. Отдельный этап, а не слагаемое в общей
+    // цели: иначе пришлось бы домножать и без того большие веса
+    // приоритетов, и коэффициенты переполнили бы long.
+    // Возвращает солвер, из которого брать итоговое решение.
+    private CpSolver SolveTieBreak(CpSolver firstStage, LinearExpr objective, int? maxSeconds)
+    {
+        _model.Add(objective <= (long)Math.Round(firstStage.ObjectiveValue));
+
+        // Подсказка - решение первого этапа: оно заведомо допустимо.
+        _model.ClearHints();
+        foreach (var start in _starts.Values)
+        {
+            _model.AddHint(start, firstStage.Value(start));
+        }
+
+        foreach (var use in _personUses.Values)
+        {
+            _model.AddHint(use, firstStage.BooleanValue(use));
+        }
+
+        var tasks = _taskAlignment.FlattenTasksToSolve.Keys.ToList();
+        var resourceIndex = _project.Resources
+            .Select((r, i) => (r.Name, i))
+            .ToDictionary(x => x.Name, x => x.i);
+
+        // Чем раньше задача в дереве, тем больше её вес - так из двух
+        // одинаковых задач раньше стартует первая, а первому в списке
+        // исполнителю достаётся первая задача (вес исполнителя домножен на
+        // вес задачи, иначе перестановка "A->john, B->doe" на "A->doe,
+        // B->john" стоила бы столько же). Порядок стартов важнее выбора
+        // исполнителя: множитель стартов больше максимально возможной
+        // суммы по исполнителям.
+        var taskWeight = tasks
+            .Select((t, i) => (t, w: (long)(tasks.Count - i)))
+            .ToDictionary(x => x.t, x => x.w);
+
+        var resourceTerm = LinearExpr.WeightedSum(
+            _personUses.Values,
+            _personUses.Keys.Select(k => resourceIndex[k.person] * taskWeight[k.task]));
+        var resourceTermMax = (long)tasks.Count * tasks.Count * _project.Resources.Count + 1;
+
+        var startTerm = LinearExpr.WeightedSum(
+            tasks.Select(t => _starts[t]),
+            tasks.Select(t => taskWeight[t]));
+
+        _model.Minimize(startTerm * resourceTermMax + resourceTerm);
+
+        var remaining = maxSeconds is null ? (double?)null : Math.Max(1, maxSeconds.Value - WallTimeSeconds);
+        var solver = CreateCpSolver(remaining);
+        var status = solver.Solve(_model);
+        WallTimeSeconds += solver.WallTime();
+        TieBreakStatus = status;
+
+        return status is CpSolverStatus.Optimal or CpSolverStatus.Feasible ? solver : firstStage;
+    }
+
+    // Жадный план: задачи по одной, в порядке готовности (все
+    // предшественники уже расставлены), а среди готовых - по приоритету и
+    // порядку в дереве; каждая ставится тому из подходящих исполнителей, у
+    // кого она раньше закончится, в первое свободное окно. Соблюдает те же
+    // жёсткие ограничения, что и модель, кроме DueDate. Нужен для двух
+    // вещей: его срок - основа горизонта (см. CalcHorizon), а сам план -
+    // подсказка солверу (см. AddGreedyHints), чтобы у того сразу было
+    // допустимое решение, а не поиск с нуля.
+    // null - если какую-то задачу не удалось поставить в MaxHorizon.
+    private Dictionary<string, (int Start, int End, string Resource)>? BuildGreedyPlan()
+    {
+        var calendars = _project.Resources.ToDictionary(
+            r => r.Name,
+            r => new CalendarLogic(MaxHorizon, _project.ProjectStart, _project.GlobalCalendar, r.Calendar));
+
+        // Занятость исполнителя - как в CreateResourceRestrictions: до
+        // AvailFrom и после AvailTo он недоступен.
+        var busy = _project.Resources.ToDictionary(r => r.Name, r =>
+        {
+            var intervals = new List<(int Start, int End)>();
+            if (r.AvailFrom is not null)
+            {
+                intervals.Add((int.MinValue, r.AvailFrom.Value.DayNumber - _project.ProjectStart.DayNumber));
+            }
+
+            if (r.AvailTo is not null)
+            {
+                intervals.Add((r.AvailTo.Value.DayNumber + 1 - _project.ProjectStart.DayNumber, int.MaxValue));
+            }
+
+            return intervals;
+        });
+
+        var plan = new Dictionary<string, (int Start, int End, string Resource)>();
+        var tasks = _taskAlignment.FlattenTasksToSolve;
+
+        // Уже начатые задачи стоят там, где стоят.
+        foreach (var (taskKey, task) in tasks)
+        {
+            if (task.Fact?.IsProgress != true)
+            {
+                continue;
+            }
+
+            var resource = FindResourcesForTask(task).Single();
+            var start = CalcFixedStart(task.Fact);
+            var duration = FindLastProgressRecord(task.Fact).Duration ?? CalcTaskLimitDuration(task, resource);
+            if (calendars[resource.Name].CalcEndOffset(start, duration) is not { } end)
+            {
+                return null;
+            }
+
+            plan[taskKey] = (start, end, resource.Name);
+            busy[resource.Name].Add((start, end));
+        }
+
+        var treeOrder = tasks.Keys.Select((k, i) => (k, i)).ToDictionary(x => x.k, x => x.i);
+
+        while (plan.Count < tasks.Count)
+        {
+            var (taskKey, task) = tasks
+                .Where(t => !plan.ContainsKey(t.Key) && t.Value.Limit!.PredecessorIds.All(plan.ContainsKey))
+                .OrderByDescending(t => _weights[t.Value.Limit!.Priority ?? 0])
+                .ThenBy(t => treeOrder[t.Key])
+                .First();
+
+            var earliest = Math.Max(0, CalcMinStart(task));
+            foreach (var predecessorId in task.Limit!.PredecessorIds)
+            {
+                earliest = Math.Max(earliest, plan[predecessorId].End);
+            }
+
+            (int Start, int End, string Resource)? best = null;
+            foreach (var resource in FindResourcesForTask(task))
+            {
+                var slot = FindFreeSlot(calendars[resource.Name], busy[resource.Name], earliest,
+                    CalcTaskLimitDuration(task, resource));
+                if (slot is not null && (best is null || slot.Value.End < best.Value.End))
+                {
+                    best = (slot.Value.Start, slot.Value.End, resource.Name);
+                }
+            }
+
+            if (best is null)
+            {
+                return null;
+            }
+
+            plan[taskKey] = best.Value;
+            busy[best.Value.Resource].Add((best.Value.Start, best.Value.End));
+        }
+
+        return plan;
+    }
+
+    // Первое окно не раньше earliest: старт в рабочий день, duration рабочих
+    // дней по календарю, без пересечения с занятостью исполнителя.
+    private static (int Start, int End)? FindFreeSlot(
+        CalendarLogic calendar, List<(int Start, int End)> busy, int earliest, int duration)
+    {
+        var start = earliest;
+        while (start < MaxHorizon)
+        {
+            if (!calendar.IsWorkingDay(start))
+            {
+                start++;
+                continue;
+            }
+
+            if (calendar.CalcEndOffset(start, duration) is not { } end)
+            {
+                return null;
+            }
+
+            var s = start;
+            var conflictEnd = busy.Where(b => b.Start < end && s < b.End).Select(b => (int?)b.End).Max();
+            if (conflictEnd is null)
+            {
+                return (start, end);
+            }
+
+            if (conflictEnd.Value >= MaxHorizon)
+            {
+                return null;
+            }
+
+            start = conflictEnd.Value;
+        }
+
+        return null;
+    }
+
+    // Горизонт = срок жадного плана с запасом: оптимальный план обычно
+    // короче жадного, но может и чуть выйти за него (например, задачу без
+    // приоритета выгодно отодвинуть подальше, чтобы приоритетная начала
+    // раньше). Слишком щедрый горизонт не бесплатен - модель растёт
+    // пропорционально ему, и солвер ищет план заметно дольше.
+    private int CalcHorizon()
+    {
+        if (_greedyPlan is null)
+        {
+            return MaxHorizon;
+        }
+
+        var makespan = _greedyPlan.Values.Select(p => p.End).DefaultIfEmpty(0).Max();
+
+        return Math.Clamp(makespan + Math.Max(14, makespan / 4), 1, MaxHorizon);
+    }
+
+    // Подсказка солверу - жадный план (см. BuildGreedyPlan). Если он
+    // нарушает DueDate, солвер просто отбросит подсказку и будет искать сам.
+    private void AddGreedyHints()
+    {
+        if (_greedyPlan is null)
+        {
+            return;
+        }
+
+        foreach (var (taskKey, (start, _, resource)) in _greedyPlan)
+        {
+            if (_fixedStarts.ContainsKey(taskKey))
+            {
+                continue;
+            }
+
+            _model.AddHint(_starts[taskKey], start);
+            foreach (var person in _project.Resources)
+            {
+                if (_personUses.TryGetValue((taskKey, person.Name), out var use))
+                {
+                    _model.AddHint(use, person.Name == resource);
+                }
+            }
+        }
+    }
+
+    private sealed class HorizonExceededException(string message) : Exception(message);
 
     // Переносит найденное солвером решение обратно в доменные объекты:
     // переводит целочисленные start/end в даты, определяет фактического
@@ -324,7 +613,7 @@ public sealed class Solver
 
             if (useList.Count == 0)
             {
-                throw new Exception(
+                throw new HorizonExceededException(
                     $"Task {taskKey} doesn't fit into the planning horizon ({Horizon} days) for any resource");
             }
 
@@ -344,7 +633,7 @@ public sealed class Solver
         var duration = FindLastProgressRecord(task.Fact!).Duration ?? CalcTaskLimitDuration(task, resource);
 
         var end = _calendars[resource.Name].CalcEndOffset(fixedStart, duration)
-                  ?? throw new Exception(
+                  ?? throw new HorizonExceededException(
                       $"Task {taskKey} is in progress and doesn't fit into the planning horizon ({Horizon} days)");
 
         _model.Add(_ends[taskKey] == end);
@@ -365,7 +654,7 @@ public sealed class Solver
     // ресурса нет ни одного допустимого старта.
     private BoolVar? CreateOptionalTaskInterval(string taskKey, TaskDto task, ResourceDto resource)
     {
-        const int noEnd = Horizon + 1;
+        var noEnd = Horizon + 1;
 
         var duration = CalcTaskLimitDuration(task, resource);
         var calendar = _calendars[resource.Name];
@@ -461,15 +750,6 @@ public sealed class Solver
     // также должна укладываться в DueDate/StartAfter, если они заданы.
     private void CreateDependencyBetweenTasks()
     {
-        // Есть ли в проекте вообще хоть одна уже завершённая задача - т.е.
-        // мы точно не первый раз решаем этот проект с чистого листа, а
-        // перепланируем то, что уже частично прожито. Только в этом случае
-        // имеет смысл запрещать свежим задачам стартовать раньше даты среза
-        // (см. ниже) - на самом первом решении "с нуля" бэкдейтинг легитимен
-        // (например, заводим в систему уже идущий проект и просим солвер
-        // восстановить, что по датам должно было случиться раньше FactDate).
-        var hasAlreadyCompletedWork = _taskAlignment.OriginalTasks.Values.Any(t => t.Fact?.IsFinished == true);
-
         foreach (var taskKv in _taskAlignment.FlattenTasksToSolve)
         {
             var task = taskKv.Value;
@@ -503,30 +783,47 @@ public sealed class Solver
                 _model.Add(_starts[task.Id] >= _ends[predecessorId]);
             }
 
-            if (task.Limit.StartAfter is not null)
+            var minStart = CalcMinStart(task);
+            if (minStart > 0)
             {
-                var startAfter = task.Limit.StartAfter.Value.DayNumber - _project.ProjectStart.DayNumber;
-                _model.Add(_starts[task.Id] >= startAfter);
-            }
-
-            // Задача без факта прогресса (ещё по-настоящему не начата) не
-            // может стартовать раньше даты среза - иначе задачи, уже ставшие
-            // Completed по предыдущей FactDate и переставшие быть интервалом
-            // в модели (см. CanSkipTask), оставляют в календарном прошлом
-            // "свободное" на вид время, куда солвер может без всякого смысла
-            // поставить совершенно новую задачу, которую физически
-            // невозможно было начать раньше, чем её вообще добавили в план.
-            // Уже начатую задачу сюда не доходим (см. startIsFixed выше) -
-            // дата её факта вполне законно может быть раньше FactDate.
-            if (hasAlreadyCompletedWork && _project.FactDate is not null)
-            {
-                var factDateOffset = _project.FactDate.Value.DayNumber - _project.ProjectStart.DayNumber;
-                if (factDateOffset > 0)
-                {
-                    _model.Add(_starts[task.Id] >= factDateOffset);
-                }
+                _model.Add(_starts[task.Id] >= minStart);
             }
         }
+    }
+
+    // Самый ранний допустимый старт ещё не начатой задачи без учёта
+    // предшественников: StartAfter и защита от бэкдейтинга по FactDate.
+    private int CalcMinStart(TaskDto task)
+    {
+        var minStart = 0;
+
+        if (task.Limit!.StartAfter is not null)
+        {
+            minStart = task.Limit.StartAfter.Value.DayNumber - _project.ProjectStart.DayNumber;
+        }
+
+        // Задача без факта прогресса (ещё по-настоящему не начата) не
+        // может стартовать раньше даты среза - иначе задачи, уже ставшие
+        // Completed по предыдущей FactDate и переставшие быть интервалом
+        // в модели (см. CanSkipTask), оставляют в календарном прошлом
+        // "свободное" на вид время, куда солвер может без всякого смысла
+        // поставить совершенно новую задачу, которую физически
+        // невозможно было начать раньше, чем её вообще добавили в план.
+        // Уже начатые задачи сюда не попадают (их старт - константа) -
+        // дата их факта вполне законно может быть раньше FactDate.
+        //
+        // Правило действует, только если в проекте есть хоть одна уже
+        // завершённая задача - т.е. мы точно не первый раз решаем этот
+        // проект с чистого листа, а перепланируем то, что уже частично
+        // прожито. На самом первом решении "с нуля" бэкдейтинг легитимен
+        // (например, заводим в систему уже идущий проект и просим солвер
+        // восстановить, что по датам должно было случиться раньше FactDate).
+        if (_hasAlreadyCompletedWork && _project.FactDate is not null)
+        {
+            minStart = Math.Max(minStart, _project.FactDate.Value.DayNumber - _project.ProjectStart.DayNumber);
+        }
+
+        return minStart;
     }
 
     // Создаёт по паре переменных start/end (в днях от ProjectStart, в

@@ -1013,4 +1013,91 @@ public sealed class SolverTests
         Assert.That(_project.RootTask.Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 1, 6)));
         Assert.That(_project.RootTask.Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 1, 12)));
     }
+
+    // Горизонт считается под проект (см. Solver.CalcHorizon): раньше он был
+    // зашит в 180 дней, и проект длиннее полугода молча не решался.
+    [Test]
+    public void ProjectLongerThanHalfYearShouldBeSolvedTest()
+    {
+        var children = Enumerable.Range(0, 10)
+            .Select(i => new TaskDto
+            {
+                Id = $"t{i}",
+                Name = $"t{i}",
+                Limit = new TaskLimitDto
+                {
+                    Duration = 30,
+                    ResourceRole = "dev",
+                    PredecessorIds = i == 0 ? [] : [$"t{i - 1}"]
+                }
+            })
+            .ToList();
+
+        _project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 5),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "root",
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
+                Children = children
+            },
+            Resources = [new ResourceDto { Role = "dev", Name = "john" }]
+        };
+
+        Assert.IsTrue(_solver.Solve(_project));
+        Assert.That(_solver.Horizon, Is.GreaterThan(180));
+
+        // 300 рабочих дней подряд с понедельника 05.01.2026 - ровно 60
+        // рабочих недель, последний день - пятница 59-й недели после старта.
+        var last = _project.RootTask.Children.Single(t => t.Id == "t9");
+        Assert.That(last.Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 1, 5).AddDays(59 * 7 + 4)));
+    }
+
+    // Между равноценными планами (одинаковая цель) солвер должен выбирать
+    // однозначно (см. Solver.SolveTieBreak): раньше стартует задача, которая
+    // раньше в дереве, а первому в списке исполнителю достаётся первая задача.
+    [TestCase(1)]
+    [TestCase(2)]
+    public void EquivalentPlansShouldBeResolvedByTreeOrderTest(int resourceCount)
+    {
+        var names = new[] { "john", "doe" };
+
+        for (var run = 0; run < 3; run++)
+        {
+            _project = new ProjectDto
+            {
+                ProjectStart = new DateOnly(2026, 1, 5),
+                RootTask = new TaskDto
+                {
+                    Id = "1",
+                    Name = "root",
+                    Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
+                    Children = [
+                        new TaskDto { Id = "a", Name = "a", Limit = new TaskLimitDto { Duration = 3, ResourceRole = "dev" } },
+                        new TaskDto { Id = "b", Name = "b", Limit = new TaskLimitDto { Duration = 3, ResourceRole = "dev" } },
+                        new TaskDto { Id = "c", Name = "c", Limit = new TaskLimitDto { Duration = 3, ResourceRole = "dev" } }
+                    ]
+                },
+                Resources = names.Take(resourceCount).Select(n => new ResourceDto { Role = "dev", Name = n }).ToList()
+            };
+
+            Assert.IsTrue(new Solver().Solve(_project));
+
+            var tasks = _project.RootTask.Children.ToList();
+            if (resourceCount == 1)
+            {
+                Assert.That(tasks.Select(t => t.Plan!.PlannedStart), Is.Ordered.Ascending);
+                Assert.That(tasks.Select(t => t.Plan!.PlannedStart).Distinct().Count(), Is.EqualTo(3));
+            }
+            else
+            {
+                Assert.That(tasks[0].Plan!.ResourceName, Is.EqualTo("john"));
+                Assert.That(tasks[1].Plan!.ResourceName, Is.EqualTo("doe"));
+                Assert.That(tasks[0].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 1, 5)));
+                Assert.That(tasks[1].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 1, 5)));
+            }
+        }
+    }
 }

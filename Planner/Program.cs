@@ -31,8 +31,13 @@ var s = new Solver();
 var solved = s.Solve(project, 30);
 
 Console.WriteLine(solved
-    ? $"Solver: {s.Status}, objective {s.ObjectiveValue:F0}, {s.WallTimeSeconds:F1}s"
-    : $"Solver: {s.Status}, {s.WallTimeSeconds:F1}s");
+    ? $"Solver: {s.Status}, objective {s.ObjectiveValue:F0}, horizon {s.Horizon} days, {s.WallTimeSeconds:F1}s"
+    : $"Solver: {s.Status}, horizon {s.Horizon} days, {s.WallTimeSeconds:F1}s");
+
+if (s.TieBreakStatus is { } tieBreak and not CpSolverStatus.Optimal)
+{
+    Console.WriteLine($"  Выбор между равноценными планами не завершён ({tieBreak}) - порядок равноценных задач может меняться.");
+}
 
 if (s.Status == CpSolverStatus.Feasible)
 {
