@@ -67,6 +67,26 @@ public class TaskTreeDataPreparerTests
         Assert.That(context.ResourceNonWorking["john-dev"], Does.Not.Contain(new DateOnly(2026, 1, 16)));
     }
 
+    // Границы доступности попадают в данные таймлайна только у тех, у кого
+    // они заданы, - их шаблон рисует линией на границе, а не штриховкой.
+    [Test]
+    public void AvailabilityShouldBePassedOnlyForResourcesWithBoundsTest()
+    {
+        var project = CalendarProject();
+        project = project with
+        {
+            Resources = project.Resources
+                .Select(r => r.Name == "john" ? r with { AvailFrom = new DateOnly(2026, 1, 7), AvailTo = new DateOnly(2026, 1, 20) } : r)
+                .ToList()
+        };
+
+        var context = TaskTreeDataPreparer.Prepare(project);
+
+        Assert.That(context.ResourceAvailability.Keys, Is.EquivalentTo(new[] {"john-dev"}));
+        Assert.That(context.ResourceAvailability["john-dev"],
+            Is.EqualTo(new TaskTreeDataPreparer.Availability(new DateOnly(2026, 1, 7), new DateOnly(2026, 1, 20))));
+    }
+
     // d3 встраивается в HTML (страница работает без интернета), а данные
     // подставляются одним проходом: "{{fact_date}}" в названии задачи
     // остаётся текстом, а "</script>" экранируется.

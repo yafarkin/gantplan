@@ -443,7 +443,8 @@ public static class DemoProject
                 new()
                 {
                     Name = "developer 1",
-                    Role = "dev-be"
+                    Role = "dev-be",
+                    AvailTo = new DateOnly(2026, 2, 17),
                 },
                 new()
                 {

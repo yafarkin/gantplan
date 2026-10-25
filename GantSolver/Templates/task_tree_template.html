@@ -244,6 +244,13 @@
 
         /* в свёрнутом треке исполнителя - сколько его задач ждут
            подтверждения закрытия (самих меток статуса там не видно) */
+        /* подпись у линии границы доступности исполнителя */
+        .avail-label {
+            font-size: 11px;
+            font-weight: 600;
+            fill: #c45f00;
+        }
+
         .closure-badge {
             display: inline-block;
             margin-left: 6px;
@@ -347,10 +354,14 @@
     <svg height="12" width="24"><rect fill="url(#hatch-global)" height="12" width="24"></rect></svg>
     общий нерабочий день (выходной/праздник) - штрихуется вся строка;
     <svg height="12" width="24"><rect fill="#1f77b4" height="12" width="24"></rect><rect fill="url(#hatch-personal)" height="12" width="24"></rect></svg>
-    личный нерабочий день исполнителя (отпуск и т.п.) - штрихуется зеркальным узором только сама задача; если человек работает в общий выходной (личный рабочий день), задача в этот день не штрихуется;
+    личный нерабочий день исполнителя (отпуск и т.п.) - штрихуется зеркальным узором сама задача, а в режиме "по исполнителям" - и вся строка исполнителя (видно отпуск и там, где задач нет); если человек работает в общий выходной (личный рабочий день), задача в этот день не штрихуется;
     <span id="legend-closure" style="display: none;">
         <svg height="12" width="24"><rect fill="#1f77b4" height="10" stroke="#dc3545" stroke-width="2" width="22" x="1" y="1"></rect></svg>
         ждёт подтверждения закрытия (по плану уже должна была закончиться, но Completed не отмечен);
+    </span>
+    <span id="legend-avail" style="display: none;">
+        <svg height="12" width="24"><rect fill="rgba(108,117,125,.32)" height="12" width="12"></rect><rect fill="#fd7e14" height="12" width="3" x="11"></rect></svg>
+        граница доступности исполнителя (AvailFrom/AvailTo) - до/после неё задач ему не ставится;
     </span>
     <span id="legend-today" style="display: none;">
         <svg height="12" width="24"><rect fill="rgba(220,53,69,.18)" height="12" width="24"></rect></svg>
@@ -365,6 +376,12 @@
         </pattern>
         <pattern height="6" id="hatch-personal" patternTransform="rotate(-45)" patternUnits="userSpaceOnUse" width="6">
             <line stroke="rgba(255,255,255,.85)" stroke-width="2" x1="0" x2="0" y1="0" y2="6"></line>
+        </pattern>
+        <!-- тот же зеркальный узор, но тёмный - для фона трека исполнителя,
+             где под штриховкой нет цветного бара -->
+        <pattern height="6" id="hatch-personal-row" patternTransform="rotate(-45)" patternUnits="userSpaceOnUse" width="6">
+            <rect fill="rgba(0,0,0,.05)" height="6" width="6"></rect>
+            <line stroke="rgba(0,0,0,.3)" stroke-width="2" x1="0" x2="0" y1="0" y2="6"></line>
         </pattern>
     </defs>
 </svg>
@@ -384,6 +401,9 @@
     // По исполнителю (ключ - node.Assignee): его итоговые нерабочие дни с
     // учётом личного календаря - отпусков и личных рабочих дней.
     const resourceNonWorking = {{resource_non_working}};
+    // По исполнителю: {From, To} - AvailFrom/AvailTo (обе включительно,
+    // любая может быть null); только у тех, у кого границы заданы.
+    const resourceAvailability = {{resource_availability}};
     const factDateStr = {{fact_date}}; // "YYYY-MM-DD" дата среза "на сегодня" или null, если не задана
     /* -------------------------------------------------------------------------------- */
 
@@ -776,6 +796,80 @@
         spacer.style('height', `${height}px`);
     }
 
+    // Личные нерабочие дни исполнителя (отпуск и т.п., кроме общих
+    // выходных - те уже штрихует общий слой) - фоном всей строки его трека.
+    // Штриховка на самих барах этого не заменяет: на отпуск солвер задачу
+    // обычно не ставит, и без фона трек выглядел так, будто человек свободен.
+    // Заодно - заливка вне границ доступности (см. renderOutsideAvailability).
+    function renderResourceBackground(svg, assignee, rowHeight) {
+        renderOutsideAvailability(svg, assignee, rowHeight);
+        if (!resourceNonWorking[assignee]) return;
+        nonWorkingSetFor(assignee).forEach(key => {
+            if (globalNonWorkingSet.has(key)) return;
+            const d = parseDate(key);
+            if (d < minDate || d > maxDate) return;
+            svg.append('rect')
+                .attr('x', xScale(d)).attr('y', 0)
+                .attr('width', dayWidth(d)).attr('height', rowHeight)
+                .attr('fill', 'url(#hatch-personal-row)')
+                .attr('pointer-events', 'none');
+        });
+    }
+
+    // Границы доступности (AvailFrom/AvailTo) - не штриховкой каждого дня,
+    // а бледной заливкой за пределами доступности (её видно, даже когда
+    // сама граница ушла за край экрана) и яркой линией на границе с
+    // подписью (см. renderAvailabilityMarks - рисуется поверх баров).
+    function availabilityBounds(assignee) {
+        const a = resourceAvailability[assignee];
+        if (!a) return null;
+        return {
+            from: a.From ? parseDate(a.From) : null,
+            // To включительно - граница проходит по концу этого дня
+            to: a.To ? d3.timeDay.offset(parseDate(a.To), 1) : null
+        };
+    }
+
+    function renderOutsideAvailability(svg, assignee, rowHeight) {
+        const b = availabilityBounds(assignee);
+        if (!b) return;
+        const end = d3.timeDay.offset(maxDate, 1);
+        const fill = (x0, x1) => {
+            if (x1 <= x0) return;
+            svg.append('rect')
+                .attr('x', xScale(x0)).attr('y', 0)
+                .attr('width', xScale(x1) - xScale(x0)).attr('height', rowHeight)
+                .attr('fill', 'rgba(108,117,125,.32)')
+                .attr('pointer-events', 'none');
+        };
+        if (b.from && b.from > minDate) fill(minDate, d3.min([b.from, end]));
+        if (b.to && b.to < end) fill(d3.max([b.to, minDate]), end);
+    }
+
+    function renderAvailabilityMarks(svg, assignee, rowHeight, {withLabels = true} = {}) {
+        const b = availabilityBounds(assignee);
+        if (!b) return;
+        const mark = (date, text, labelOnLeft) => {
+            if (date <= minDate || date > d3.timeDay.offset(maxDate, 1)) return;
+            const x = xScale(date);
+            svg.append('rect')
+                .attr('x', x - 1.5).attr('y', 0)
+                .attr('width', 3).attr('height', rowHeight)
+                .attr('fill', '#fd7e14')
+                .append('title').text(text);
+            if (!withLabels) return;
+            svg.append('text')
+                .attr('x', labelOnLeft ? x - 5 : x + 5).attr('y', 12)
+                .attr('text-anchor', labelOnLeft ? 'end' : 'start')
+                .attr('class', 'avail-label')
+                .attr('pointer-events', 'none')
+                .text(text);
+        };
+        const dm = d3.timeFormat('%d.%m');
+        if (b.from) mark(b.from, `доступен с ${dm(b.from)}`, true);
+        if (b.to) mark(b.to, `доступен до ${dm(d3.timeDay.offset(b.to, -1))}`, false);
+    }
+
     // muted - приглушить бар (задача уже завершена/на паузе), не убирая его.
     function renderTaskBar(svg, node, {muted = false, rowHeight = ROW_HEIGHT} = {}) {
         const x0 = xScale(node._start), x1 = xScale(d3.timeDay.offset(node._end, 1));
@@ -884,7 +978,7 @@
        svg. Строки-заглушки в #tree-panel нужны только для сохранения пары
        "1 строка = 1 data-row в обеих панелях" (синхронизация скролла и
        hover работают по этому индексу). */
-    function renderGanttLanes(lanes) {
+    function renderGanttLanes(lanes, assignee) {
         lanes.forEach(lane => {
             const laneIdx = rowIndex++;
             const laneClass = 'tree-row' + (laneIdx % 2 === 1 ? ' stripe' : '');
@@ -901,9 +995,11 @@
                 .on('mouseenter', () => setRowHover(laneIdx, true))
                 .on('mouseleave', () => setRowHover(laneIdx, false));
             const svg = laneRow.append('svg').attr('width', timelineWidth).attr('height', LANE_ROW_HEIGHT);
+            renderResourceBackground(svg, assignee, LANE_ROW_HEIGHT);
             lane.forEach(t => {
                 renderTaskBar(svg, t, {muted: t.Muted, rowHeight: LANE_ROW_HEIGHT});
             });
+            renderAvailabilityMarks(svg, assignee, LANE_ROW_HEIGHT, {withLabels: false});
         });
     }
 
@@ -1018,9 +1114,17 @@
             // пересекаются по датам) идут своими строками через renderGanttLanes.
             barRow.style('height', `${headerRowHeight}px`);
             const svg = barRow.append('svg').attr('width', timelineWidth).attr('height', headerRowHeight);
+            renderResourceBackground(svg, node.Name, headerRowHeight);
             (collapsedGanttLanes[0] || []).forEach(t => {
                 renderTaskBar(svg, t, {muted: t.Muted, rowHeight: headerRowHeight});
             });
+            renderAvailabilityMarks(svg, node.Name, headerRowHeight);
+        } else if (node._isGroupHeader) {
+            // развёрнутый ресурс: своего бара у заголовка нет, но отпуск и
+            // границы доступности человека всё равно видны в его строке
+            const svg = barRow.append('svg').attr('width', timelineWidth).attr('height', ROW_HEIGHT);
+            renderResourceBackground(svg, node.Name, ROW_HEIGHT);
+            renderAvailabilityMarks(svg, node.Name, ROW_HEIGHT);
         } else {
             renderBarCell(barRow, node);
         }
@@ -1028,7 +1132,7 @@
         if (hasChildren && isExpanded(node)) {
             node.Children.forEach(c => renderRow(c, query, depth + 1));
         } else if (collapsedGanttLanes && collapsedGanttLanes.length > 1) {
-            renderGanttLanes(collapsedGanttLanes.slice(1));
+            renderGanttLanes(collapsedGanttLanes.slice(1), node.Name);
         }
     }
 
@@ -1112,6 +1216,9 @@
     // кнопка только предлагает быстро туда перескочить, а не делает это сама.
     if ([...nodeById.values()].some(n => n.AwaitingClosure)) {
         d3.select('#legend-closure').style('display', null);
+    }
+    if (Object.keys(resourceAvailability).length) {
+        d3.select('#legend-avail').style('display', null);
     }
 
     (function wireTodayButton() {

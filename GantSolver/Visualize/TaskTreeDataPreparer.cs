@@ -33,7 +33,14 @@ public static class TaskTreeDataPreparer
         var resourceNonWorking = project.Resources
             .ToDictionary(ResourceKey, r => NonWorkingDays(project, range, r.Calendar));
 
-        return new TreeContext(root, globalNonWorking, resourceNonWorking, project.FactDate);
+        // AvailFrom/AvailTo - только у тех, у кого задана хотя бы одна
+        // граница: шаблон рисует их отдельно от календаря (линия на границе
+        // и бледная заливка), а не штриховкой каждого дня.
+        var resourceAvailability = project.Resources
+            .Where(r => r.AvailFrom is not null || r.AvailTo is not null)
+            .ToDictionary(ResourceKey, r => new Availability(r.AvailFrom, r.AvailTo));
+
+        return new TreeContext(root, globalNonWorking, resourceNonWorking, resourceAvailability, project.FactDate);
     }
 
     /// <summary>
@@ -63,6 +70,7 @@ public static class TaskTreeDataPreparer
             ["TreeData"] = JsonConvert.SerializeObject(context.Root, jsonSettings),
             ["global_non_working"] = JsonConvert.SerializeObject(context.GlobalNonWorking, jsonSettings),
             ["resource_non_working"] = JsonConvert.SerializeObject(context.ResourceNonWorking, jsonSettings),
+            ["resource_availability"] = JsonConvert.SerializeObject(context.ResourceAvailability, jsonSettings),
             ["fact_date"] = JsonConvert.SerializeObject(context.FactDate, jsonSettings)
         };
 
@@ -200,6 +208,8 @@ public static class TaskTreeDataPreparer
         List<TaskNode> Children
     );
 
+    public sealed record Availability(DateOnly? From, DateOnly? To);
+
     public sealed record TreeContext(
         TaskNode Root,
         // итоговые общие нерабочие дни на диапазоне плана: выходные и
@@ -208,6 +218,9 @@ public static class TaskTreeDataPreparer
         // итоговые нерабочие дни каждого исполнителя (ключ - ResourceKey):
         // общий календарь плюс личный - отпуска, личные рабочие дни
         Dictionary<string, DateOnly[]> ResourceNonWorking,
+        // границы доступности исполнителя (ResourceDto.AvailFrom/AvailTo,
+        // обе включительно; ключ - ResourceKey) - только у тех, у кого они заданы
+        Dictionary<string, Availability> ResourceAvailability,
         // Дата среза "на сегодня" (ProjectDto.FactDate) - линия "сегодня" и
         // кнопка "на сегодня" в шаблоне; сама временная ось по-прежнему
         // всегда начинается с начала плана, а не с этой даты.
