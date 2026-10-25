@@ -2,6 +2,7 @@ using System.Diagnostics;
 using GantPlan.Dtos;
 using GantPlan.Dtos.Enums;
 using Google.OrTools.Sat;
+using Google.OrTools.Util;
 using LinearExpr = Google.OrTools.Sat.LinearExpr;
 
 namespace GantPlan.Logic;
@@ -22,7 +23,7 @@ public sealed class Solver
     private TaskAlignment _taskAlignment = null!;
 
     // Веса приоритетов для целевой функции: чем выше приоритет задачи, тем
-    // сильнее штраф за поздний старт (см. CreateIntervalsAndPriorityObjectives),
+    // сильнее штраф за поздний старт (см. CreateStartEndVarsAndPriorityObjectives),
     // поэтому солвер стремится начинать такие задачи как можно раньше.
     private readonly Dictionary<int, long> _weights = new()
     {
@@ -35,12 +36,26 @@ public sealed class Solver
     private CpModel _model = null!;
     private readonly Dictionary<string, IntVar> _starts = new();
     private readonly Dictionary<string, IntVar> _ends = new();
+    // Зафиксированный фактом старт уже начатых задач (см. CalcFixedStart).
+    private readonly Dictionary<string, int> _fixedStarts = new();
     private readonly Dictionary<(string task, string person), BoolVar> _personUses = new();
     private readonly Dictionary<string, List<IntervalVar>> _personIntervals = new();
     private readonly List<LinearExpr> _priorityObjectives = new();
     
     private readonly Dictionary<string, CalendarLogic>  _calendars = new();
-    
+
+    // Итог последнего Solve - для диагностики в консоли. Optimal - лучший
+    // план доказан; Feasible - план найден, но лимит времени кончился до
+    // доказательства оптимальности (следующий прогон может дать другой);
+    // Infeasible - ограничения противоречат друг другу; Unknown - за лимит
+    // времени не нашлось вообще ни одного плана (это ещё не значит, что
+    // его нет).
+    public CpSolverStatus Status { get; private set; }
+
+    public double ObjectiveValue { get; private set; }
+
+    public double WallTimeSeconds { get; private set; }
+
     public bool Solve(ProjectDto project, int? maxSeconds = null)
     {
         _project = project;
@@ -61,7 +76,6 @@ public sealed class Solver
         var makespan = _model.NewIntVar(0, Horizon, "makespan");
         _model.AddMaxEquality(makespan, _taskAlignment.FlattenTasksToSolve.Select(t => _ends[t.Key]).ToArray());
         _model.Minimize(makespan + LinearExpr.Sum(_priorityObjectives));
-        //model.Minimize(makespan);
 
         var solver = new CpSolver();
 
@@ -70,29 +84,17 @@ public sealed class Solver
             solver.StringParameters = $"max_time_in_seconds:{maxSeconds}";
         }
 
-        var status = solver.Solve(_model);
-        
-        var solved = status is CpSolverStatus.Optimal or CpSolverStatus.Feasible;
+        Status = solver.Solve(_model);
+        WallTimeSeconds = solver.WallTime();
+
+        var solved = Status is CpSolverStatus.Optimal or CpSolverStatus.Feasible;
 
         if (solved)
         {
+            ObjectiveValue = solver.ObjectiveValue;
             PostFillAfterSolve(solver);
         }
-        
-        // var proto = _model.Model;
-        // var response = solver.Response!;
-        //
-        // for (int i = 0; i < proto.Variables.Count; i++)
-        // {
-        //     var v = proto.Variables[i];
-        //     var val = response.Solution[i];
-        //     Console.WriteLine($"{v.Name} = {val}");
-        // }
-        // foreach (var c in proto.Constraints)
-        // {
-        //     Console.WriteLine(c);
-        // }
-        
+
         return solved;
     }
 
@@ -133,7 +135,7 @@ public sealed class Solver
             // Определяем исполнителя задачи: если задача уже в работе - это тот,
             // кто её реально делал последний раз (менять исполнителя "задним
             // числом" нельзя); иначе - тот ресурс, для которого солвер выставил
-            // personUseVar в 1 (см. CreateTasksIntervals).
+            // use-переменную в 1 (см. CreateOptionalTaskInterval).
             ResourceDto? resource = null;
             if (task.Fact!.IsProgress)
             {
@@ -181,7 +183,7 @@ public sealed class Solver
             // "ещё не стартовала", и дописывал бы вторую, конкурирующую запись
             // с длительностью, пересчитанной заново из Limit - молча замещая
             // (при выборе "последней прогресс-записи" ниже и в
-            // CreateTasksIntervals) уже известный, реальный остаток чужой,
+            // FindLastProgressRecord) уже известный, реальный остаток чужой,
             // выдуманной оценкой.
             var hasAnyProgressRecord = task.Fact.Records.Any(x =>
                 x.Type is TaskFactRecordType.Started or TaskFactRecordType.InProgress
@@ -223,18 +225,17 @@ public sealed class Solver
             {
                 // Дата среза попадает внутрь планового интервала задачи -
                 // задача в процессе, нужно пересчитать оставшуюся длительность.
-                var lastProgressRec = task.Fact!.Records.Last(x =>
-                    x.Type is TaskFactRecordType.Started or TaskFactRecordType.InProgress
-                        or TaskFactRecordType.CorrectedDuration && x.Duration is not null);
+                var lastProgressRec = FindLastProgressRecord(task.Fact);
 
                 if (lastProgressRec.RecordedAt < _project.FactDate)
                 {
                     var calendar = _calendars[resource.Name];
+                    var lastDuration = lastProgressRec.Duration ?? CalcTaskLimitDuration(task, resource);
 
                     // Оставшаяся длительность = длительность на момент последней
                     // отметки минус число рабочих дней ресурса, фактически
                     // прошедших между стартом и датой среза.
-                    var remainingDur = lastProgressRec.Duration - calendar.CalcWorkingDaysCount(calcedStart, _project.FactDate.Value);
+                    var remainingDur = lastDuration - calendar.CalcWorkingDaysCount(calcedStart, _project.FactDate.Value);
 
                     task.Fact.Records.Add(new TaskFactRecordDto
                     {
@@ -283,7 +284,7 @@ public sealed class Solver
     // выбора ресурса и его нерабочих дней.
     private void PrepareSolverConstraints()
     {
-        CreateIntervalsAndPriorityObjectives();
+        CreateStartEndVarsAndPriorityObjectives();
         CreateDependencyBetweenTasks();
         CreateResourceRestrictions();
         CreateTasksIntervals();
@@ -292,147 +293,121 @@ public sealed class Solver
     // Для каждой планируемой задачи перебирает всех кандидатов-ресурсов
     // (см. FindResourcesForTask) и строит для каждого из них "опциональный"
     // интервал (задействуется только если солвер выберет именно этот
-    // ресурс). Длительность каждого такого интервала растягивается на число
-    // нерабочих дней ресурса, которые попадают внутрь интервала, - так
-    // рабочая длительность задачи (в бизнес-днях) превращается в календарную.
-    // В конце для задачи выбирается ровно один ресурс (AddExactlyOne), а для
+    // ресурс). Рабочая длительность задачи (в бизнес-днях) переводится в
+    // календарную по календарю ресурса (см. CreateOptionalTaskInterval).
+    // Для задачи выбирается ровно один ресурс (AddExactlyOne), а для
     // каждого ресурса все его интервалы (включая "перерывы" из
     // CreateResourceRestrictions) не должны пересекаться (AddNoOverlap).
     private void CreateTasksIntervals()
     {
-        foreach (var taskKv in _taskAlignment.FlattenTasksToSolve)
+        foreach (var (taskKey, task) in _taskAlignment.FlattenTasksToSolve)
         {
-            var taskKey = taskKv.Key;
-            var task = taskKv.Value;
-
             var resources = FindResourcesForTask(task);
 
-            var useList = new HashSet<BoolVar>();
+            if (_fixedStarts.TryGetValue(taskKey, out var fixedStart))
+            {
+                // Уже начатая задача: исполнитель (единственный кандидат, см.
+                // FindResourcesForTask) и старт известны из факта.
+                CreateFixedTaskInterval(taskKey, task, fixedStart, resources.Single());
+                continue;
+            }
 
+            var useList = new List<ILiteral>();
             foreach (var resource in resources)
             {
-                var resourceCalendar = _calendars[resource.Name];
-
-                var taskInProgress = task.Fact?.IsProgress == true;
-                var lastProgressRec = task.Fact?.Records.LastOrDefault(x =>
-                    x.Type is TaskFactRecordType.Started or TaskFactRecordType.InProgress
-                        or TaskFactRecordType.CorrectedDuration && x.Duration is not null);
-
-                // Если задача уже в работе, берём фактически оставшуюся
-                // длительность из последней записи факта, иначе считаем её
-                // по лимитам задачи и параметрам ресурса.
-                var duration = 0;
-                if (taskInProgress && lastProgressRec is not null)
+                var use = CreateOptionalTaskInterval(taskKey, task, resource);
+                if (use is not null)
                 {
-                    duration = lastProgressRec.Duration!.Value;
+                    useList.Add(use);
                 }
-
-                if(duration == 0)
-                {
-                    duration = CalcTaskLimitDuration(task, resource);
-                }
-
-                var nonWorkingDays = resourceCalendar.NonWorkingDays;
-                var nonWorkingDaysCount = nonWorkingDays.Count;
-
-                // dur - это длительность интервала в календарных днях. Нижняя
-                // граница - рабочая длительность без единого нерабочего дня
-                // внутри; верхняя - на случай, если интервал заденет вообще
-                // все нерабочие дни ресурса в горизонте планирования.
-                // Фактическое значение зафиксируется ниже constraint'ом
-                // dur == duration + Σcross.
-                var dur = _model.NewIntVar(duration, duration + nonWorkingDaysCount, $"dur_nonwork_{taskKey}_{resource.Name}");
-
-                IntervalVar interval;
-                
-                BoolVar personUseVar;
-            
-                // if task already in progress, we will add hard constraints
-                if (taskInProgress)
-                {
-                    var fixedStart = lastProgressRec!.RecordedAt.DayNumber - _project.ProjectStart.DayNumber;
-                
-                    // started - day has been begun, other statuses - day finished, i.e. next range calc as +1 day
-                    if (lastProgressRec.Type != TaskFactRecordType.Started)
-                    {
-                        fixedStart++;
-                    }
-
-                    _starts[taskKey] = _model.NewConstant(fixedStart);
-                
-                    //interval = _model.NewIntervalVar(_starts[taskKey], dur, _ends[taskKey], $"fix_{taskKey}_{resource.Name}");
-                    
-                    personUseVar = _model.NewBoolVar($"force_use_{taskKey}_{resource.Name}");
-                    _model.Add(personUseVar == 1);
-                    
-                    interval = _model.NewOptionalIntervalVar(_starts[taskKey], dur, _ends[taskKey], personUseVar, $"fix_{taskKey}_{resource.Name}");                    
-                }
-                else
-                {
-                    personUseVar = _model.NewBoolVar($"use_{taskKey}_{resource.Name}");
-                
-                    interval = _model.NewOptionalIntervalVar(_starts[taskKey], dur, _ends[taskKey], personUseVar,
-                        $"opt_{taskKey}_{resource.Name}");
-                }
-                
-                _personIntervals[resource.Name].Add(interval);
-                _personUses[(taskKey, resource.Name)] = personUseVar;
-                useList.Add(personUseVar);
-
-                // Для каждого нерабочего дня ресурса ("day") нужно определить,
-                // попадает ли он внутрь интервала [start, end) этой задачи у
-                // этого ресурса. Заводим три булевы переменные на день:
-                //   beforeEnd  ⇔ start ≤ day   (задача уже началась к этому дню)
-                //   afterStart ⇔ end > day     (задача ещё не закончилась к этому дню)
-                //   cross      ⇔ beforeEnd ∧ afterStart (день реально внутри интервала)
-                // Каждая переменная жёстко привязывается к start/end двумя
-                // constraint'ами (прямым и обратным), независимо от значения
-                // cross - только так cross гарантированно совпадает с реальным
-                // положением дел, а не может быть выставлен солвером "просто
-                // так" (именно рассинхронизация cross с beforeEnd/afterStart
-                // раньше приводила к тому, что длительность задачи могла
-                // раздуваться на пустом месте).
-                // Связь cross с beforeEnd/afterStart задаётся в обе стороны:
-                // AddBoolAnd - "cross ⇒ beforeEnd и afterStart",
-                // AddBoolOr  - "beforeEnd и afterStart ⇒ cross".
-                var currentCrosses = new HashSet<BoolVar>();
-                foreach (var day in nonWorkingDays)
-                {
-                    var cross = _model.NewBoolVar($"cross_vac_{day}_{resource.Name}_{taskKey}");
-                    var beforeEnd = _model.NewBoolVar($"before_vac_end_{day}_{resource.Name}_{taskKey}");
-                    var afterStart = _model.NewBoolVar($"after_vac_start_{day}_{resource.Name}_{taskKey}");
-
-                    _model.Add(_starts[taskKey] < day + 1).OnlyEnforceIf([beforeEnd, personUseVar]);
-                    _model.Add(_starts[taskKey] >= day + 1).OnlyEnforceIf([beforeEnd.Not(), personUseVar]);
-
-                    _model.Add(_ends[taskKey] > day).OnlyEnforceIf([afterStart, personUseVar]);
-                    _model.Add(_ends[taskKey] <= day).OnlyEnforceIf([afterStart.Not(), personUseVar]);
-
-                    _model.AddBoolAnd([beforeEnd, afterStart]).OnlyEnforceIf([cross, personUseVar]);
-                    _model.AddBoolOr([cross, beforeEnd.Not(), afterStart.Not()]).OnlyEnforceIf(personUseVar);
-
-                    currentCrosses.Add(cross);
-                }
-
-                // Календарная длительность = рабочая длительность + число
-                // нерабочих дней, реально захваченных интервалом задачи.
-                // end пересчитывается из start и итоговой dur.
-                _model.Add(dur == duration + LinearExpr.Sum(currentCrosses)).OnlyEnforceIf(personUseVar);
-                _model.Add(_ends[taskKey] == _starts[taskKey] + dur).OnlyEnforceIf(personUseVar);
             }
-            
-            // each task can have only one resource
-            if (useList.Any())
+
+            if (useList.Count == 0)
             {
-                _model.AddExactlyOne(useList);
+                throw new Exception(
+                    $"Task {taskKey} doesn't fit into the planning horizon ({Horizon} days) for any resource");
+            }
+
+            _model.AddExactlyOne(useList);
+        }
+
+        foreach (var intervals in _personIntervals.Values)
+        {
+            _model.AddNoOverlap(intervals);
+        }
+    }
+
+    // Задача в работе: старт и исполнитель зафиксированы фактом, длительность
+    // - остаток из последней записи прогресса, так что и конец - константа.
+    private void CreateFixedTaskInterval(string taskKey, TaskDto task, int fixedStart, ResourceDto resource)
+    {
+        var duration = FindLastProgressRecord(task.Fact!).Duration ?? CalcTaskLimitDuration(task, resource);
+
+        var end = _calendars[resource.Name].CalcEndOffset(fixedStart, duration)
+                  ?? throw new Exception(
+                      $"Task {taskKey} is in progress and doesn't fit into the planning horizon ({Horizon} days)");
+
+        _model.Add(_ends[taskKey] == end);
+        _personIntervals[resource.Name].Add(
+            _model.NewIntervalVar(fixedStart, end - fixedStart, end, $"fix_{taskKey}_{resource.Name}"));
+    }
+
+    // Длительность задачи у конкретного ресурса фиксирована, поэтому для
+    // каждого возможного старта s конец задачи по календарю ресурса
+    // известен заранее: endTable[s]. Связь start -> end задаётся одним
+    // AddElement вместо поштучного учёта каждого нерабочего дня. Старт в
+    // нерабочий день (или такой, что задача не влезает в горизонт) помечен
+    // в таблице как NoEnd и запрещён, если выбран этот ресурс, - иначе
+    // солвер "выгодно" начинал бы задачи в субботу: конец тот же, а start
+    // в целевой функции меньше. Последний день задачи по построению
+    // таблицы тоже всегда рабочий.
+    // Возвращает литерал "задачу делает этот ресурс" или null, если у
+    // ресурса нет ни одного допустимого старта.
+    private BoolVar? CreateOptionalTaskInterval(string taskKey, TaskDto task, ResourceDto resource)
+    {
+        const int noEnd = Horizon + 1;
+
+        var duration = CalcTaskLimitDuration(task, resource);
+        var calendar = _calendars[resource.Name];
+
+        // Индекс таблицы - значение start, его домен [0, Horizon].
+        var endTable = new long[Horizon + 1];
+        Array.Fill(endTable, noEnd);
+        for (var s = 0; s < Horizon; s++)
+        {
+            if (calendar.IsWorkingDay(s) && calendar.CalcEndOffset(s, duration) is { } end)
+            {
+                endTable[s] = end;
             }
         }
-        
-        // no overlaps in tasks for resource
-        foreach (var kv in _personIntervals)
+
+        var sizes = Enumerable.Range(0, Horizon)
+            .Where(s => endTable[s] != noEnd)
+            .Select(s => endTable[s] - s)
+            .ToList();
+
+        if (sizes.Count == 0)
         {
-            _model.AddNoOverlap(kv.Value);
+            return null;
         }
+
+        var use = _model.NewBoolVar($"use_{taskKey}_{resource.Name}");
+        _personUses[(taskKey, resource.Name)] = use;
+
+        // AddElement действует безусловно (таблица определена для любого
+        // start), а вот запрет NoEnd и связь с общим end задачи - только
+        // если задачу делает именно этот ресурс.
+        var resourceEnd = _model.NewIntVarFromDomain(
+            Domain.FromValues(endTable.Distinct().ToArray()), $"end_{taskKey}_{resource.Name}");
+        _model.AddElement(_starts[taskKey], endTable, resourceEnd);
+        _model.Add(resourceEnd != noEnd).OnlyEnforceIf(use);
+        _model.Add(_ends[taskKey] == resourceEnd).OnlyEnforceIf(use);
+
+        var size = _model.NewIntVar(sizes.Min(), sizes.Max(), $"size_{taskKey}_{resource.Name}");
+        _personIntervals[resource.Name].Add(
+            _model.NewOptionalIntervalVar(_starts[taskKey], size, _ends[taskKey], use, $"opt_{taskKey}_{resource.Name}"));
+
+        return use;
     }
 
     // Готовит на каждого ресурса: 1) персональный календарь рабочих/нерабочих
@@ -445,6 +420,7 @@ public sealed class Solver
     private void CreateResourceRestrictions()
     {
         _calendars.Clear();
+        _personIntervals.Clear();
 
         foreach (var resource in _project.Resources)
         {
@@ -459,12 +435,13 @@ public sealed class Solver
                 _personIntervals[resource.Name].Add(breakInterval);
             }
 
-            // Ресурс недоступен после AvailTo - "занимаем" его до конца горизонта.
+            // Ресурс недоступен после AvailTo - "занимаем" его до конца
+            // горизонта. AvailTo - последний доступный день включительно
+            // (так же его понимают DailyPlanExporter/QuarterDistributionExporter),
+            // поэтому занято со следующего дня.
             if (resource.AvailTo.HasValue)
             {
-                var from = resource.AvailTo <= _project.ProjectStart
-                    ? 0
-                    : resource.AvailTo.Value.DayNumber - _project.ProjectStart.DayNumber;
+                var from = Math.Max(0, resource.AvailTo.Value.DayNumber + 1 - _project.ProjectStart.DayNumber);
 
                 var dur = Horizon - from;
                 if (dur > 0)
@@ -497,7 +474,24 @@ public sealed class Solver
         {
             var task = taskKv.Value;
 
-            foreach (var predecessorId in task.Limit!.PredecessorIds)
+            // Старт уже начатой задачи - константа из факта (см.
+            // CreateStartEndVarsAndPriorityObjectives): что было, то было,
+            // предшественники и StartAfter на него уже не влияют. DueDate
+            // по-прежнему действует - он ограничивает конец.
+            var startIsFixed = _fixedStarts.ContainsKey(task.Id);
+
+            if (task.Limit!.DueDate is not null)
+            {
+                var dueDate = task.Limit.DueDate.Value.DayNumber - _project.ProjectStart.DayNumber;
+                _model.Add(_ends[task.Id] <= dueDate);
+            }
+
+            if (startIsFixed)
+            {
+                continue;
+            }
+
+            foreach (var predecessorId in task.Limit.PredecessorIds)
             {
                 // PredecessorResolver уже вырезал из PredecessorIds всех
                 // Disabled/Paused/Finished предшественников (см.
@@ -507,12 +501,6 @@ public sealed class Solver
                     $"Predecessor {predecessorId} should have been filtered out by PredecessorResolver");
 
                 _model.Add(_starts[task.Id] >= _ends[predecessorId]);
-            }
-
-            if (task.Limit.DueDate is not null)
-            {
-                var dueDate = task.Limit.DueDate.Value.DayNumber - _project.ProjectStart.DayNumber;
-                _model.Add(_ends[task.Id] <= dueDate);
             }
 
             if (task.Limit.StartAfter is not null)
@@ -528,10 +516,9 @@ public sealed class Solver
             // "свободное" на вид время, куда солвер может без всякого смысла
             // поставить совершенно новую задачу, которую физически
             // невозможно было начать раньше, чем её вообще добавили в план.
-            // Уже начатую задачу (Fact.IsProgress) не трогаем - её старт и
-            // так жёстко зафиксирован датой факта ниже, в CreateTasksIntervals,
-            // и та дата вполне законно может быть раньше текущей FactDate.
-            if (hasAlreadyCompletedWork && _project.FactDate is not null && task.Fact?.IsProgress != true)
+            // Уже начатую задачу сюда не доходим (см. startIsFixed выше) -
+            // дата её факта вполне законно может быть раньше FactDate.
+            if (hasAlreadyCompletedWork && _project.FactDate is not null)
             {
                 var factDateOffset = _project.FactDate.Value.DayNumber - _project.ProjectStart.DayNumber;
                 if (factDateOffset > 0)
@@ -544,20 +531,34 @@ public sealed class Solver
 
     // Создаёт по паре переменных start/end (в днях от ProjectStart, в
     // пределах горизонта) на каждую планируемую задачу - на них дальше
-    // ссылаются все остальные ограничения. Заодно формирует слагаемое
+    // ссылаются все остальные ограничения. У уже начатой задачи start -
+    // константа из факта (см. CalcFixedStart). Заодно формирует слагаемое
     // целевой функции "start * вес приоритета": чем важнее задача, тем
     // дороже обходится солверу сдвигать её начало вправо.
-    private void CreateIntervalsAndPriorityObjectives()
+    private void CreateStartEndVarsAndPriorityObjectives()
     {
         _starts.Clear();
         _ends.Clear();
+        _fixedStarts.Clear();
+        _personUses.Clear();
         _priorityObjectives.Clear();
 
         foreach (var taskKv in _taskAlignment.FlattenTasksToSolve)
         {
             var task = taskKv.Value;
 
-            var startIntVar = _model.NewIntVar(0, Horizon, $"start_{task.Id}");
+            IntVar startIntVar;
+            if (task.Fact?.IsProgress == true)
+            {
+                var fixedStart = CalcFixedStart(task.Fact);
+                _fixedStarts[task.Id] = fixedStart;
+                startIntVar = _model.NewConstant(fixedStart);
+            }
+            else
+            {
+                startIntVar = _model.NewIntVar(0, Horizon, $"start_{task.Id}");
+            }
+
             var endIntVar = _model.NewIntVar(0, Horizon, $"end_{task.Id}");
             _starts[task.Id] = startIntVar;
             _ends[task.Id] = endIntVar;
@@ -565,6 +566,33 @@ public sealed class Solver
             var po = startIntVar * _weights[task.Limit!.Priority ?? 0];
             _priorityObjectives.Add(po);
         }
+    }
+
+    // Старт уже начатой задачи (в днях от ProjectStart) - дата последней
+    // записи прогресса. Started - работа в этот день только начата; прочие
+    // записи - день уже отработан, остаток считается со следующего дня.
+    private int CalcFixedStart(TaskFactDto fact)
+    {
+        var lastProgressRec = FindLastProgressRecord(fact);
+        var fixedStart = lastProgressRec.RecordedAt.DayNumber - _project.ProjectStart.DayNumber;
+
+        return lastProgressRec.Type == TaskFactRecordType.Started ? fixedStart : fixedStart + 1;
+    }
+
+    // Последняя запись прогресса (Started/InProgress/CorrectedDuration),
+    // предпочтительно с известным остатком Duration. Если ни у одной записи
+    // остатка нет (например, Started без Duration) - просто последняя
+    // запись прогресса, а остаток тогда берётся из лимитов задачи.
+    // Вызывается только для задач с Fact.IsProgress, так что хотя бы
+    // одна запись Started/InProgress гарантированно есть.
+    private static TaskFactRecordDto FindLastProgressRecord(TaskFactDto fact)
+    {
+        static bool IsProgressRecord(TaskFactRecordDto x) =>
+            x.Type is TaskFactRecordType.Started or TaskFactRecordType.InProgress
+                or TaskFactRecordType.CorrectedDuration;
+
+        return fact.Records.LastOrDefault(x => IsProgressRecord(x) && x.Duration is not null)
+               ?? fact.Records.Last(IsProgressRecord);
     }
 
     // Рабочая (бизнес-дневная) длительность задачи для конкретного ресурса:
@@ -616,7 +644,7 @@ public sealed class Solver
             var resource = _project.Resources.SingleOrDefault(r => r.Name == resourceName);
             if (resource is null)
             {
-                throw new Exception($"Can't find {resource}, for task {task.Id}");
+                throw new Exception($"Can't find resource {resourceName} for task {task.Id}");
             }
 
             resources = [resource];

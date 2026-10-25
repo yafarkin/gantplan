@@ -78,9 +78,50 @@ public sealed class CalendarLogic
         NonWorkingDays = [..nonWorkingDays];
     }
 
+    // Рабочий ли день со смещением offset от startDate. Дни до начала
+    // горизонта (offset < 0 - например, факт старта раньше ProjectStart)
+    // считаются рабочими: календаря на них нет.
+    public bool IsWorkingDay(int offset)
+    {
+        if (offset >= _days.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(offset));
+        }
+
+        return offset < 0 || _days[offset];
+    }
+
+    // Смещение дня, следующего за последним из workingDays рабочих дней,
+    // отсчитанных с дня start включительно (то есть "end" в терминах
+    // солвера - полуинтервал [start, end)). Последний день задачи по
+    // построению всегда рабочий. null - если до конца горизонта столько
+    // рабочих дней не набирается.
+    public int? CalcEndOffset(int start, int workingDays)
+    {
+        var i = start;
+        var remaining = workingDays;
+
+        while (remaining > 0)
+        {
+            if (i >= _days.Length)
+            {
+                return null;
+            }
+
+            if (IsWorkingDay(i))
+            {
+                remaining--;
+            }
+
+            i++;
+        }
+
+        return i;
+    }
+
     public int CalcWorkingDaysCount(DateOnly start, DateOnly end)
     {
-        if (start < _startDate || end > _startDate.AddDays(_days.Length))
+        if (start < _startDate || end >= _startDate.AddDays(_days.Length))
         {
             throw new ArgumentOutOfRangeException(nameof(start));
         }

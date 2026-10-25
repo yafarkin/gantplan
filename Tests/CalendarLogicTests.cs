@@ -105,4 +105,19 @@ public class CalendarLogicTests
         var dayIndex = saturday.DayNumber - new DateOnly(2026, 1, 1).DayNumber;
         Assert.That(calendar.NonWorkingDays.Contains(dayIndex), Is.False);
     }
+
+    // CalcEndOffset - "end" полуинтервала [start, end) для заданного числа
+    // рабочих дней: нерабочие дни внутри пропускаются, последний день
+    // всегда рабочий; null - если рабочие дни не набираются до конца горизонта.
+    [Test]
+    public void CalcEndOffsetShouldSkipNonWorkingDaysTest()
+    {
+        // 01.01.2026 - четверг: 0 = чт, 1 = пт, 2-3 = выходные, 4 = пн.
+        var calendar = new CalendarLogic(30, new DateOnly(2026, 1, 1), null, null);
+
+        Assert.That(calendar.CalcEndOffset(0, 2), Is.EqualTo(2));
+        Assert.That(calendar.CalcEndOffset(0, 3), Is.EqualTo(5));
+        Assert.That(calendar.CalcEndOffset(1, 0), Is.EqualTo(1));
+        Assert.That(calendar.CalcEndOffset(25, 10), Is.Null);
+    }
 }

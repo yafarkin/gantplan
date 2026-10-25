@@ -171,7 +171,9 @@ public sealed class SolverTests
         Assert.That(tasks[0].Fact.Records[0].Type, Is.EqualTo(TaskFactRecordType.Started));
         
         Assert.That(tasks[1].Plan!.ResourceName, Is.EqualTo(expectedResource1));
-        Assert.That(tasks[1].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 24)));
+        // task1 заканчивается в пятницу 23.01 - следующая начинается не в
+        // субботу 24.01, а в понедельник 26.01 (старт в нерабочий день запрещён).
+        Assert.That(tasks[1].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 26)));
         Assert.That(tasks[1].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 28)));
         Assert.IsNotNull(tasks[1].Fact);
         Assert.That(tasks[1].Fact.IsProgress, Is.True);
@@ -276,7 +278,8 @@ public sealed class SolverTests
         Assert.That(tasks[0].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 4)));
         
         Assert.That(tasks[1].Plan!.ResourceName, Is.EqualTo(resourceDoe.Name));
-        Assert.That(tasks[1].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 3)));
+        // doe доступен с субботы 03.01, но начинает в первый рабочий день - 05.01.
+        Assert.That(tasks[1].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 5)));
         Assert.That(tasks[1].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 8)));
     }
 
@@ -389,7 +392,8 @@ public sealed class SolverTests
         var tasks = _project.RootTask.Children.ToList();
         Assert.That(tasks.Count, Is.EqualTo(2));
         
-        Assert.That(tasks[0].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 10)));
+        // StartAfter = суббота 10.01 - старт в первый рабочий день после неё.
+        Assert.That(tasks[0].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 12)));
         Assert.That(tasks[0].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 30)));
         
         Assert.That(tasks[1].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 1)));
@@ -458,10 +462,11 @@ public sealed class SolverTests
         }));
         Assert.That(task2.Fact.Records[1].RecordedAt, Is.EqualTo(task2.Plan.PlannedFinish));
 
-        // задача 3 (10.01 -> 06.02) - дата среза (20.01) попадает внутрь её
+        // задача 3 (12.01 -> 06.02) - дата среза (20.01) попадает внутрь её
         // планового интервала: значит "в работе", а не "завершена", и с
         // пересчитанным (а не исходной оценкой в 20 дней) остатком.
-        Assert.That(task3.Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 1, 10)));
+        // задача 2 кончилась в пятницу 09.01 - задача 3 стартует в понедельник 12.01.
+        Assert.That(task3.Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 1, 12)));
         Assert.That(task3.Fact!.IsFinished, Is.False);
         Assert.That(task3.Fact.IsProgress, Is.True);
         Assert.That(task3.Fact.Records.Select(r => r.Type), Is.EqualTo(new[]
@@ -473,8 +478,8 @@ public sealed class SolverTests
         var lastRecord = task3.Fact.Records[1];
         Assert.That(lastRecord.RecordedAt, Is.EqualTo(_project.FactDate));
         Assert.That(lastRecord.ResourceName, Is.EqualTo("john"));
-        // исходная оценка - 20 рабочих дней; между стартом (10.01, суббота -
-        // считается с первого рабочего дня) и датой среза (20.01) прошло 7
+        // исходная оценка - 20 рабочих дней; между стартом (12.01) и датой
+        // среза (20.01) прошло 7
         // рабочих дней (см. CalendarLogic.CalcWorkingDaysCount) - остаток
         // пересчитан как 20 - 7 = 13, а не просто скопирован с исходной оценки.
         Assert.That(lastRecord.Duration, Is.EqualTo(13));
@@ -723,7 +728,7 @@ public sealed class SolverTests
             TaskFactRecordType.Completed
         }));
         // плановое окончание не "уехало" от пересчёта на новом FactDate -
-        // 20 рабочих дней от 10.01 и 13 (= 20 - 7 уже прошедших) рабочих
+        // 20 рабочих дней от 12.01 и 13 (= 20 - 7 уже прошедших) рабочих
         // дней от зафиксированного 21.01 математически дают одну и ту же
         // дату - солвер самосогласован между прогонами.
         Assert.That(longTask.Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 2, 6)));
@@ -796,7 +801,7 @@ public sealed class SolverTests
     // пересчёт), но 22.01 кто-то вручную скорректировал остаток на 15 дней
     // (например, вскрылась недооценённая сложность) - CorrectedDuration
     // должна победить как "последняя запись прогресса" (см.
-    // Solver.CreateTasksIntervals: lastProgressRec ищет среди Started,
+    // Solver.FindLastProgressRecord: ищет среди Started,
     // InProgress И CorrectedDuration), а не более ранняя InProgress-оценка.
     [Test]
     public void CorrectedDurationShouldOverrideEarlierProgressEstimateTest()
@@ -901,5 +906,111 @@ public sealed class SolverTests
         Assert.That(task.Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 1, 6)));
         Assert.That(task.Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 1, 19)));
         Assert.That(task.Fact.Records[1].Duration, Is.EqualTo(6));
+    }
+
+    // Солвер не должен ставить старт или окончание задачи на нерабочий день:
+    // раньше старт в субботу был для него "выгоднее" понедельника (конец тот
+    // же, а start в целевой функции меньше), и на диаграмме задачи
+    // начинались в выходные.
+    [Test]
+    public void NoTaskShouldStartOrFinishOnNonWorkingDayTest()
+    {
+        var holiday = new DateOnly(2026, 1, 14);
+
+        _project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 1),
+            GlobalCalendar = new CalendarDto
+            {
+                NonWorkingDays = [new CalendarPeriod { From = holiday, To = holiday }]
+            },
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "root",
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
+                Children = [
+                    new TaskDto { Id = "a", Name = "a", Limit = new TaskLimitDto { Duration = 2, ResourceRole = "dev" } },
+                    new TaskDto { Id = "b", Name = "b", Limit = new TaskLimitDto { Duration = 3, ResourceRole = "dev", PredecessorIds = ["a"] } },
+                    new TaskDto { Id = "c", Name = "c", Limit = new TaskLimitDto { Duration = 1, ResourceRole = "dev", PredecessorIds = ["b"] } },
+                    new TaskDto { Id = "d", Name = "d", Limit = new TaskLimitDto { Duration = 4, ResourceRole = "dev", PredecessorIds = ["c"] } }
+                ]
+            },
+            Resources = [new ResourceDto { Role = "dev", Name = "john" }]
+        };
+
+        Assert.IsTrue(_solver.Solve(_project));
+
+        static bool IsNonWorking(DateOnly d, DateOnly holiday) =>
+            d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday || d == holiday;
+
+        foreach (var task in _project.RootTask.Children)
+        {
+            Assert.That(IsNonWorking(task.Plan!.PlannedStart!.Value, holiday), Is.False, $"start of {task.Id}");
+            Assert.That(IsNonWorking(task.Plan!.PlannedFinish!.Value, holiday), Is.False, $"finish of {task.Id}");
+        }
+
+        // a: 01.01 (чт) - 02.01 (пт); b: 05.01 - 07.01; c: 08.01;
+        // d: 09.01 (пт), 12.01, 13.01, 15.01 (14.01 - праздник).
+        var d = _project.RootTask.Children.Single(t => t.Id == "d");
+        Assert.That(d.Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 1, 9)));
+        Assert.That(d.Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 1, 15)));
+    }
+
+    // AvailTo - последний доступный день включительно (так его понимают и
+    // экспортёры отчётов). Раньше солвер занимал ресурс уже с самого дня
+    // AvailTo, и задача ровно до этого дня включительно не помещалась.
+    [Test]
+    public void ResourceShouldBeAvailableOnAvailToDayTest()
+    {
+        _project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 5),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "root",
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
+                Limit = new TaskLimitDto { Duration = 5, ResourceRole = "dev" }
+            },
+            Resources = [new ResourceDto { Role = "dev", Name = "john", AvailTo = new DateOnly(2026, 1, 9) }]
+        };
+
+        Assert.IsTrue(_solver.Solve(_project));
+        Assert.That(_project.RootTask.Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 1, 5)));
+        Assert.That(_project.RootTask.Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 1, 9)));
+    }
+
+    // Started без Duration - задача в работе, но остаток не указан. Раньше
+    // солвер падал NullReferenceException'ом (искал последнюю запись
+    // прогресса только среди записей с Duration); теперь старт берётся из
+    // этой записи, а длительность - из лимитов задачи.
+    [Test]
+    public void StartedRecordWithoutDurationShouldUseLimitDurationTest()
+    {
+        _project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 5),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "root",
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
+                Limit = new TaskLimitDto { Duration = 5, ResourceRole = "dev" },
+                Fact = new TaskFactDto
+                {
+                    Records =
+                    [
+                        new TaskFactRecordDto { RecordedAt = new DateOnly(2026, 1, 6), Type = TaskFactRecordType.Started, ResourceName = "john" }
+                    ]
+                }
+            },
+            Resources = [new ResourceDto { Role = "dev", Name = "john" }]
+        };
+
+        Assert.IsTrue(_solver.Solve(_project));
+        // 06.01 (вт) - 09.01 (пт) - 4 дня, 12.01 (пн) - пятый.
+        Assert.That(_project.RootTask.Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 1, 6)));
+        Assert.That(_project.RootTask.Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 1, 12)));
     }
 }

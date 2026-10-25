@@ -73,7 +73,7 @@ public sealed class TaskAlignment
         }
 
         // Solver всегда считает objective как start * weights[Priority ?? 0]
-        // (см. Solver.CreateIntervalsAndPriorityObjectives) - без дефолтного
+        // (см. Solver.CreateStartEndVarsAndPriorityObjectives) - без дефолтного
         // веса на приоритет 0 это упадёт в середине решения, а не сразу.
         if (!weights.ContainsKey(0))
         {
