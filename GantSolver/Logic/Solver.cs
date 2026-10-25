@@ -38,6 +38,10 @@ public sealed class Solver
     private readonly Dictionary<string, IntVar> _starts = new();
     private readonly Dictionary<string, IntVar> _ends = new();
     private readonly Dictionary<(string task, string person), BoolVar> _personUses = new();
+    // Вспомогательные переменные варианта "задачу делает этот ресурс" (см.
+    // CreateOptionalTaskInterval) - нужны, чтобы подсказка солверу была
+    // полной (см. AddGreedyHints).
+    private readonly Dictionary<(string task, string person), OptionVars> _personOptions = new();
     private readonly Dictionary<string, List<IntervalVar>> _personIntervals = new();
     private readonly List<LinearExpr> _priorityObjectives = new();
 
@@ -127,6 +131,11 @@ public sealed class Solver
         // приоритетных штрафов за поздний старт (см. _weights).
         var makespan = _model.NewIntVar(0, Horizon, "makespan");
         _model.AddMaxEquality(makespan, alignment.FlattenTasksToSolve.Select(t => _ends[t.Key]).ToArray());
+        if (_greedyPlan is not null)
+        {
+            _model.AddHint(makespan, _greedyPlan.Values.Select(p => p.End).DefaultIfEmpty(0).Max());
+        }
+
         var objective = makespan + LinearExpr.Sum(_priorityObjectives);
         _model.Minimize(objective);
 
@@ -152,14 +161,22 @@ public sealed class Solver
         return solved;
     }
 
+    // Облегчённый presolve: таблицы AddElement CP-SAT раскладывает в десятки
+    // тысяч ограничений, и пробинг по ним на больших планах (квартал,
+    // десятки задач) съедал весь лимит времени - до поиска дело не
+    // доходило, и план не находился вообще, хотя готовая подсказка уже
+    // была. Без пробинга и с одной итерацией presolve допустимый план есть
+    // сразу, а на длинном лимите качество решения то же.
+    private const string SolverParameters = "cp_model_probing_level:0 max_presolve_iterations:1";
+
     private static CpSolver CreateCpSolver(double? maxSeconds)
     {
-        var solver = new CpSolver();
-
-        if (maxSeconds is not null)
+        var solver = new CpSolver
         {
-            solver.StringParameters = FormattableString.Invariant($"max_time_in_seconds:{maxSeconds}");
-        }
+            StringParameters = maxSeconds is null
+                ? SolverParameters
+                : FormattableString.Invariant($"{SolverParameters} max_time_in_seconds:{maxSeconds}")
+        };
 
         return solver;
     }
@@ -244,8 +261,14 @@ public sealed class Solver
         return Math.Clamp(makespan + Math.Max(14, makespan / 4), 1, PlanningContext.MaxHorizon);
     }
 
-    // Подсказка солверу - жадный план (см. GreedyPlanner). Если он нарушает
-    // DueDate, солвер просто отбросит подсказку и будет искать сам.
+    // Подсказка солверу - жадный план (см. GreedyPlanner), причём полная:
+    // значения всех переменных модели, а не только стартов и выбора
+    // исполнителя. С частичной подсказкой CP-SAT вынужден сам достраивать
+    // остальное и на больших планах (квартал, десятки задач) не успевал
+    // найти за лимит времени вообще ни одного плана; с полной - допустимый
+    // план есть сразу, и всё время уходит на его улучшение. Если жадный
+    // план нарушает DueDate, солвер просто отбросит подсказку и будет искать
+    // сам.
     private void AddGreedyHints()
     {
         if (_greedyPlan is null)
@@ -253,8 +276,10 @@ public sealed class Solver
             return;
         }
 
-        foreach (var (taskKey, (start, _, resource)) in _greedyPlan)
+        foreach (var (taskKey, (start, end, resource)) in _greedyPlan)
         {
+            _model.AddHint(_ends[taskKey], end);
+
             if (_context.FixedTasks.ContainsKey(taskKey))
             {
                 continue;
@@ -263,13 +288,26 @@ public sealed class Solver
             _model.AddHint(_starts[taskKey], start);
             foreach (var person in _context.Project.Resources)
             {
-                if (_personUses.TryGetValue((taskKey, person.Name), out var use))
+                if (!_personUses.TryGetValue((taskKey, person.Name), out var use))
                 {
-                    _model.AddHint(use, person.Name == resource);
+                    continue;
                 }
+
+                var chosen = person.Name == resource;
+                _model.AddHint(use, chosen);
+
+                // AddElement действует безусловно - конец по таблице
+                // определён и у невыбранных исполнителей; длительность
+                // интервала у невыбранного ни на что не влияет, берём любую
+                // допустимую.
+                var option = _personOptions[(taskKey, person.Name)];
+                _model.AddHint(option.ResourceEnd, option.EndTable[start]);
+                _model.AddHint(option.Size, chosen ? end - start : option.MinSize);
             }
         }
     }
+
+    private sealed record OptionVars(IntVar ResourceEnd, IntVar Size, long[] EndTable, long MinSize);
 
     private sealed class HorizonExceededException(string message) : Exception(message);
 
@@ -484,6 +522,7 @@ public sealed class Solver
         var size = _model.NewIntVar(sizes.Min(), sizes.Max(), $"size_{taskKey}_{resource.Name}");
         _personIntervals[resource.Name].Add(
             _model.NewOptionalIntervalVar(_starts[taskKey], size, _ends[taskKey], use, $"opt_{taskKey}_{resource.Name}"));
+        _personOptions[(taskKey, resource.Name)] = new OptionVars(resourceEnd, size, endTable, sizes.Min());
 
         return use;
     }
@@ -617,6 +656,7 @@ public sealed class Solver
         _starts.Clear();
         _ends.Clear();
         _personUses.Clear();
+        _personOptions.Clear();
         _priorityObjectives.Clear();
 
         foreach (var (taskKey, task) in _context.Alignment.FlattenTasksToSolve)

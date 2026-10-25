@@ -28,7 +28,10 @@ else
 }
 
 var s = new Solver();
-var solved = s.Solve(project, 30);
+// Лимит времени солвера в секундах - первым аргументом командной строки
+// (dotnet run -- 120), по умолчанию 30.
+var maxSeconds = args.Length > 0 && int.TryParse(args[0], out var seconds) && seconds > 0 ? seconds : 30;
+var solved = s.Solve(project, maxSeconds);
 
 Console.WriteLine(solved
     ? $"Solver: {s.Status}, objective {s.ObjectiveValue:F0}, horizon {s.Horizon} days, {s.WallTimeSeconds:F1}s"
@@ -41,7 +44,8 @@ if (s.TieBreakStatus is { } tieBreak and not CpSolverStatus.Optimal)
 
 if (s.Status == CpSolverStatus.Feasible)
 {
-    Console.WriteLine("  Оптимальность не доказана за лимит времени - план может отличаться от прогона к прогону.");
+    Console.WriteLine($"  Оптимальность не доказана за {maxSeconds} с - план может отличаться от прогона к прогону; " +
+                      "больший лимит - первым аргументом: dotnet run -- 120");
 }
 
 if (!solved)
