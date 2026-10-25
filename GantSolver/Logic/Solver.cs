@@ -896,7 +896,9 @@ public sealed class Solver
     // явно заданная Duration или оценка по TShirt-размеру с поправкой на
     // уверенность оценки ресурса (Confidence: 100% - нижняя граница, 0% -
     // верхняя), затем прибавляется буфер, затем длительность увеличивается
-    // пропорционально неполной загрузке ресурса на задаче (Percent).
+    // пропорционально неполной загрузке ресурса на задаче (Percent) с
+    // округлением вверх: неполный день - всё равно занятый день (5 дней при
+    // 80% - это 6.25, то есть 7, а не 6).
     private int CalcTaskLimitDuration(TaskDto task, ResourceDto resource)
     {
         var duration = task.Limit!.Duration ?? task.Limit.TShirt!.Value.ToDays(resource.Confidence);
@@ -908,7 +910,7 @@ public sealed class Solver
 
         if (resource.Percent != 100)
         {
-            duration = Math.Max(1, Convert.ToInt32(Math.Floor(duration * 100.0 / resource.Percent)));
+            duration = Math.Max(1, Convert.ToInt32(Math.Ceiling(duration * 100.0 / resource.Percent)));
         }
 
         return duration;

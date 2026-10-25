@@ -1100,4 +1100,27 @@ public sealed class SolverTests
             }
         }
     }
+
+    // Неполная загрузка (Percent) округляется вверх: 5 дней при 80% - это
+    // 6.25, то есть 7 рабочих дней, а не 6.
+    [Test]
+    public void PartialPercentShouldRoundDurationUpTest()
+    {
+        _project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 5),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "root",
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
+                Limit = new TaskLimitDto { Duration = 5, ResourceRole = "dev" }
+            },
+            Resources = [new ResourceDto { Role = "dev", Name = "john", Percent = 80 }]
+        };
+
+        Assert.IsTrue(_solver.Solve(_project));
+        // 05.01-09.01 - пять дней, 12.01 и 13.01 - шестой и седьмой.
+        Assert.That(_project.RootTask.Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 1, 13)));
+    }
 }
