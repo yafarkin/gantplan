@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <title>Дерево задач</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- d3 встраивается сюда целиком при генерации (см. TaskTreeDataPreparer.GenerateHtml) -->
+    {{d3_script}}
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -68,16 +69,40 @@
             max-height: 78vh;
         }
 
+        /* Своя вертикальная полоса прокрутки у дерева скрыта (колесо и
+           тачпад работают как обычно): вертикальная полоса одна - у
+           таймлайна, а две полосы рядом только путали. */
         #tree-panel {
             flex: 0 0 520px;
             overflow-y: auto;
             overflow-x: hidden;
             border-right: 1px solid #dee2e6;
+            scrollbar-width: none;
         }
 
+        #tree-panel::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* position/z-index - собственный контекст наложения, чтобы слой
+           нерабочих дней (.nonwork-layer, z-index -1) лёг под строки, но
+           поверх фона самой панели. */
         #timeline-panel {
             flex: 1 1 auto;
             overflow: auto;
+            position: relative;
+            z-index: 0;
+        }
+
+        /* Фон нерабочих дней и колонка "сегодня" - один SVG на всю высоту
+           таймлайна под строками, а не свой набор прямоугольников в каждой
+           строке (на сотнях строк это были десятки тысяч элементов). */
+        .nonwork-layer {
+            position: absolute;
+            top: 22px;
+            left: 0;
+            z-index: -1;
+            pointer-events: none;
         }
 
         .header-row {
@@ -128,6 +153,16 @@
 
         .tree-row.hover {
             background: #eef4ff;
+        }
+
+        /* в таймлайне фон строк полупрозрачный - сквозь него виден слой
+           нерабочих дней (.nonwork-layer) */
+        #timeline-panel .tree-row.stripe {
+            background: rgba(0, 0, 0, .025);
+        }
+
+        #timeline-panel .tree-row.hover {
+            background: rgba(0, 90, 255, .08);
         }
 
         .tree-row.muted {
@@ -300,7 +335,11 @@
     <svg height="12" width="24"><rect fill="url(#hatch-global)" height="12" width="24"></rect></svg>
     общий нерабочий день (выходной/праздник) - штрихуется вся строка;
     <svg height="12" width="24"><rect fill="#1f77b4" height="12" width="24"></rect><rect fill="url(#hatch-personal)" height="12" width="24"></rect></svg>
-    личный нерабочий день исполнителя (отпуск и т.п.) - штрихуется зеркальным узором только сама задача; если день и общий, и личный - штрихуются оба узора сразу
+    личный нерабочий день исполнителя (отпуск и т.п.) - штрихуется зеркальным узором только сама задача; если человек работает в общий выходной (личный рабочий день), задача в этот день не штрихуется;
+    <span id="legend-today" style="display: none;">
+        <svg height="12" width="24"><rect fill="rgba(220,53,69,.18)" height="12" width="24"></rect></svg>
+        дата среза ("сегодня")
+    </span>
 </div>
 <svg height="0" style="position: absolute; width: 0;">
     <defs>
@@ -321,7 +360,13 @@
 <script>
     /* -------------------- placeholders, подставляются бэкендом -------------------- */
     const treeData = {{TreeData}};
+    // Нерабочие дни уже посчитаны бэкендом тем же CalendarLogic, что и у
+    // солвера, - здесь их не пересчитываем (никаких своих "суббота и
+    // воскресенье"), иначе диаграмма расходится с планом.
+    // Общие: выходные + праздники за вычетом рабочих переносов.
     const globalNonWorking = {{global_non_working}};
+    // По исполнителю (ключ - node.Assignee): его итоговые нерабочие дни с
+    // учётом личного календаря - отпусков и личных рабочих дней.
     const resourceNonWorking = {{resource_non_working}};
     const factDateStr = {{fact_date}}; // "YYYY-MM-DD" дата среза "на сегодня" или null, если не задана
     /* -------------------------------------------------------------------------------- */
@@ -353,11 +398,21 @@
         return d.toLocaleDateString('sv-SE');
     }
 
-    function isWeekend(d) {
-        return d.getDay() === 0 || d.getDay() === 6;
+    const globalNonWorkingSet = new Set(globalNonWorking);
+
+    function isGlobalNonWorking(d) {
+        return globalNonWorkingSet.has(ymdLocal(d));
     }
 
-    const globalHolidaySet = new Set(globalNonWorking);
+    // Нерабочие дни исполнителя; для неизвестного (или пустого)
+    // исполнителя - общий календарь.
+    const personalSetCache = new Map();
+
+    function nonWorkingSetFor(assignee) {
+        if (!assignee || !resourceNonWorking[assignee]) return globalNonWorkingSet;
+        if (!personalSetCache.has(assignee)) personalSetCache.set(assignee, new Set(resourceNonWorking[assignee]));
+        return personalSetCache.get(assignee);
+    }
 
     /* ===== INDEX THE TREE (даты, множество задач по id) ===== */
     const nodeById = new Map();
@@ -387,6 +442,12 @@
     const xScale = d3.scaleTime()
         .domain([minDate, d3.timeDay.offset(maxDate, 1)])
         .range([0, timelineWidth]);
+
+    function dayWidth(d) {
+        return Math.max(1, xScale(d3.timeDay.offset(d, 1)) - xScale(d));
+    }
+
+    const todayInRange = !!todayDate && todayDate >= minDate && todayDate <= maxDate;
 
     // цвет бара приходит готовым от бэкенда (node.Color, см.
     // TaskColorPalette): свой цвет на каждый эпик, оттенки этого же цвета -
@@ -515,8 +576,31 @@
     // пользователя, а не состояние по умолчанию.
     resourceNames.forEach(name => collapsedIds.add(`@resource@${name}`));
 
+    // Ветки, ведущие к найденному поиском/фильтром, раскрываются только на
+    // время фильтра: autoExpandedIds пересобирается на каждый render (см.
+    // markVisible) и не трогает collapsedIds. Раньше фильтр навсегда
+    // удалял id из collapsedIds - после очистки поиска всё оставалось
+    // развёрнутым, а свёрнутые треки исполнителей (диаграмма Ганта)
+    // превращались в длинные списки.
+    const autoExpandedIds = new Set();
+    // Ветки, которые пользователь сам свернул при активном фильтре, - их
+    // фильтр больше не раскрывает (иначе клик по ▾ ничего бы не делал).
+    // Сбрасывается при смене фильтра.
+    const collapsedWhileFiltering = new Set();
+    let lastFilterKey = '';
+
     function isExpanded(node) {
-        return !collapsedIds.has(node.Id);
+        return autoExpandedIds.has(node.Id) || !collapsedIds.has(node.Id);
+    }
+
+    function collapseNode(id) {
+        collapsedIds.add(id);
+        collapsedWhileFiltering.add(id);
+    }
+
+    function expandNode(id) {
+        collapsedIds.delete(id);
+        collapsedWhileFiltering.delete(id);
     }
 
     /* ===== FILTERING ===== */
@@ -534,7 +618,7 @@
     // поиск (например, ввели номер эпика) - forced передаётся вниз, и все
     // его потомки остаются видны целиком, а не только те, что тоже
     // совпали бы с запросом по отдельности. Ветки, ведущие к найденному,
-    // автоматически разворачиваются.
+    // временно разворачиваются (см. autoExpandedIds).
     function markVisible(node, query, assignee, forced) {
         node._selfMatch = nodeMatches(node, query, assignee);
         const childForced = forced || node._selfMatch;
@@ -542,8 +626,8 @@
             .map(c => markVisible(c, query, assignee, childForced))
             .some(Boolean);
         node._visible = forced || node._selfMatch || anyChildVisible;
-        if (anyChildVisible && (query || assignee)) {
-            collapsedIds.delete(node.Id);
+        if (anyChildVisible && (query || assignee) && !collapsedWhileFiltering.has(node.Id)) {
+            autoExpandedIds.add(node.Id);
         }
         return node._visible;
     }
@@ -572,20 +656,29 @@
 
         const days = d3.timeDay.range(minDate, d3.timeDay.offset(maxDate, 1));
         svg.selectAll('rect.nonwork-band')
-            .data(days.filter(d => isWeekend(d) || globalHolidaySet.has(ymdLocal(d))))
+            .data(days.filter(isGlobalNonWorking))
             .enter().append('rect')
             .attr('x', d => xScale(d))
             .attr('y', 0)
-            .attr('width', d => Math.max(1, xScale(d3.timeDay.offset(d, 1)) - xScale(d)))
+            .attr('width', d => dayWidth(d))
             .attr('height', 22)
             .attr('fill', 'url(#hatch-global)');
 
+        if (todayInRange) {
+            svg.append('rect')
+                .attr('x', xScale(todayDate)).attr('y', 0)
+                .attr('width', dayWidth(todayDate)).attr('height', 22)
+                .attr('fill', 'rgba(220,53,69,.6)');
+        }
+
         // подписи дат: день.месяц (не просто число) - чтобы переход между
         // месяцами был виден сразу по подписи, а не только по вертикальной
-        // линии начала недели; полный год - лишь в начале месяца и на самом
+        // линии начала недели; год - лишь в начале месяца и на самом
         // первом дне, чтобы не потерять ориентир, к какому году относятся
-        // числа рядом.
+        // числа рядом. Год двузначный: полная дата (2025-11-24) в ячейку
+        // дня не помещалась и налезала на подпись следующего дня.
         const dayMonth = d3.timeFormat('%d.%m');
+        const dayMonthYear = d3.timeFormat('%d.%m.%y');
         svg.selectAll('text.tick')
             .data(days)
             .enter().append('text')
@@ -593,7 +686,7 @@
             .attr('y', 15)
             .attr('fill', '#fff')
             .attr('font-size', 11)
-            .text(d => (d.getDate() === 1 || +d === +minDate) ? fmtDate(d) : dayMonth(d));
+            .text(d => (d.getDate() === 1 || +d === +minDate) ? dayMonthYear(d) : dayMonth(d));
 
         svg.selectAll('line.week')
             .data(d3.timeMonday.range(minDate, d3.timeDay.offset(maxDate, 1)))
@@ -610,24 +703,52 @@
         return lines.join('\n');
     }
 
-    /* ===== RENDER: полоска задачи (фон нерабочих дней + сам бар + штриховка) =====
-       Фон нерабочих дней рисуется на всю ширину строки независимо от
-       наличия бара - так видно выходные и там, где задачи нет. Вынесено
-       отдельно от бара, т.к. на дорожке Ганта (свёрнутый ресурс) на одном
-       фоне рисуется несколько баров подряд, а не один. rowHeight передаётся
-       явно - обычная строка (ROW_HEIGHT) и строка дорожки Ганта
-       (LANE_ROW_HEIGHT) разной высоты. */
-    function renderRowBackground(svg, rowHeight) {
+    /* ===== RENDER: слой нерабочих дней под строками таймлайна =====
+       Один SVG на всю высоту таймлайна (см. .nonwork-layer) - так видно
+       выходные и там, где задачи нет, а число элементов не растёт с числом
+       строк. Высота выставляется после того, как нарисованы все строки
+       (см. render). */
+    function renderNonWorkLayer() {
+        const layer = d3.select('#timeline-panel').append('svg')
+            .attr('class', 'nonwork-layer')
+            .attr('width', timelineWidth)
+            .attr('height', 0);
+
         d3.timeDay.range(minDate, d3.timeDay.offset(maxDate, 1))
-            .filter(d => isWeekend(d) || globalHolidaySet.has(ymdLocal(d)))
+            .filter(isGlobalNonWorking)
             .forEach(d => {
-                svg.append('rect')
-                    .attr('x', xScale(d)).attr('y', 1)
-                    .attr('width', Math.max(1, xScale(d3.timeDay.offset(d, 1)) - xScale(d)))
-                    .attr('height', rowHeight - 2)
-                    .attr('fill', 'url(#hatch-global)')
-                    .attr('pointer-events', 'none');
+                layer.append('rect')
+                    .attr('x', xScale(d)).attr('y', 0)
+                    .attr('width', dayWidth(d)).attr('height', '100%')
+                    .attr('fill', 'url(#hatch-global)');
             });
+
+        if (todayInRange) {
+            layer.append('rect')
+                .attr('x', xScale(todayDate)).attr('y', 0)
+                .attr('width', dayWidth(todayDate)).attr('height', '100%')
+                .attr('fill', 'rgba(220,53,69,.18)');
+        }
+
+        return layer;
+    }
+
+    // Высота слоя - по фактической высоте строк: пока слой нулевой высоты,
+    // scrollHeight панели - это ровно заголовок плюс строки.
+    function fitNonWorkLayer(layer) {
+        const timelinePanel = document.getElementById('timeline-panel');
+        layer.attr('height', Math.max(0, timelinePanel.scrollHeight - 22));
+    }
+
+    // Под деревом - отступ высотой с горизонтальную полосу прокрутки
+    // таймлайна: иначе таймлайн прокручивается вниз на эту высоту дальше
+    // дерева, и в самом низу названия задач и их бары разъезжаются.
+    function syncScrollbarSpacer() {
+        const timelinePanel = document.getElementById('timeline-panel');
+        const height = Math.max(0, timelinePanel.offsetHeight - timelinePanel.clientHeight);
+        let spacer = d3.select('#tree-panel .scrollbar-spacer');
+        if (spacer.empty()) spacer = d3.select('#tree-panel').append('div').attr('class', 'scrollbar-spacer');
+        spacer.style('height', `${height}px`);
     }
 
     // muted - приглушить бар (задача уже завершена/на паузе), не убирая его.
@@ -661,7 +782,9 @@
         // задач это превращало её в "кучу безымянных полосок") - на узких
         // барах просто уменьшаем шрифт, а затем обрезаем посимвольно, пока не
         // влезет (аналог text-overflow:ellipsis, но для SVG-текста, который
-        // его не поддерживает). Если есть ссылка на Jira - подпись начинается
+        // его не поддерживает; длина подбирается двоичным поиском - замер
+        // текста дорогой, а посимвольно на сотнях баров это заметно тормозило).
+        // Если есть ссылка на Jira - подпись начинается
         // с ключа задачи в квадратных скобках и подчёркивается, чтобы сразу
         // было видно и номер задачи, и то, что это ссылка.
         const labelClasses = ['gantt-bar-label'];
@@ -675,42 +798,45 @@
             .text(hasLink ? `[${node.JiraKey}] ${node.Name}` : node.Name);
 
         const el = label.node();
-        while (el.getComputedTextLength() > width - 10 && label.text().length > 1) {
-            label.text(label.text().slice(0, -1));
-        }
-        // совсем крошечный бар (меньше одного символа даже мелким шрифтом) -
-        // показать нечего, подпись только мешала бы
-        if (el.getComputedTextLength() > width - 10) {
-            label.remove();
+        const maxWidth = width - 10;
+        if (el.getComputedTextLength() > maxWidth) {
+            const full = label.text();
+            // самый длинный префикс, который влезает
+            let lo = 0, hi = full.length - 1;
+            while (lo < hi) {
+                const mid = (lo + hi + 1) >> 1;
+                label.text(full.slice(0, mid));
+                if (el.getComputedTextLength() <= maxWidth) lo = mid; else hi = mid - 1;
+            }
+            // совсем крошечный бар (меньше одного символа даже мелким
+            // шрифтом) - показать нечего, подпись только мешала бы
+            if (lo === 0) label.remove(); else label.text(full.slice(0, lo));
         }
 
-        // штриховка поверх бара: свой угол для общих нерабочих дней и
-        // зеркальный - для личных (отпуск и т.п. у конкретного исполнителя);
-        // если день и общий, и личный нерабочий - рисуются оба узора разом.
-        const personalSet = node.Assignee ? new Set(resourceNonWorking[node.Assignee] || []) : null;
+        // штриховка поверх бара - по календарю самого исполнителя: общий
+        // нерабочий день - своим углом, личный (отпуск и т.п.) - зеркальным.
+        // Если человек работает в общий выходной (личный рабочий день),
+        // бар в этот день не штрихуется - солвер законно поставил туда работу.
+        const ownNonWorking = nonWorkingSetFor(node.Assignee);
         d3.timeDay.range(node._start, d3.timeDay.offset(node._end, 1)).forEach(d => {
             const key = ymdLocal(d);
-            const global = isWeekend(d) || globalHolidaySet.has(key);
-            const personal = !!personalSet && personalSet.has(key);
-            if (!global && !personal) return;
+            if (!ownNonWorking.has(key)) return;
+            const hatch = globalNonWorkingSet.has(key) ? 'url(#hatch-global)' : 'url(#hatch-personal)';
 
             // pointer-events:none - штриховка чисто декоративная и рисуется
             // поверх бара (в т.ч. поверх ссылки на Jira); без этого клик по
             // заштрихованной части бара не долетал до <a> под ней - ссылку
             // получалось открыть только через свободный от штриховки участок.
-            const x = xScale(d), w = Math.max(1, xScale(d3.timeDay.offset(d, 1)) - x);
-            if (global) {
-                svg.append('rect').attr('x', x).attr('y', 3).attr('width', w).attr('height', rowHeight - 6).attr('fill', 'url(#hatch-global)').attr('pointer-events', 'none');
-            }
-            if (personal) {
-                svg.append('rect').attr('x', x).attr('y', 3).attr('width', w).attr('height', rowHeight - 6).attr('fill', 'url(#hatch-personal)').attr('pointer-events', 'none');
-            }
+            svg.append('rect')
+                .attr('x', xScale(d)).attr('y', 3)
+                .attr('width', dayWidth(d)).attr('height', rowHeight - 6)
+                .attr('fill', hatch)
+                .attr('pointer-events', 'none');
         });
     }
 
     function renderBarCell(barCol, node) {
         const svg = barCol.append('svg').attr('width', timelineWidth).attr('height', ROW_HEIGHT);
-        renderRowBackground(svg, ROW_HEIGHT);
         if (node._start && node._end) renderTaskBar(svg, node);
     }
 
@@ -736,7 +862,6 @@
                 .on('mouseenter', () => setRowHover(laneIdx, true))
                 .on('mouseleave', () => setRowHover(laneIdx, false));
             const svg = laneRow.append('svg').attr('width', timelineWidth).attr('height', LANE_ROW_HEIGHT);
-            renderRowBackground(svg, LANE_ROW_HEIGHT);
             lane.forEach(t => {
                 renderTaskBar(svg, t, {muted: !!t.StatusLabel, rowHeight: LANE_ROW_HEIGHT});
             });
@@ -788,7 +913,7 @@
         if (hasChildren) {
             caret.text(isExpanded(node) ? '▾' : '▸')
                 .on('click', () => {
-                    if (isExpanded(node)) collapsedIds.add(node.Id); else collapsedIds.delete(node.Id);
+                    if (isExpanded(node)) collapseNode(node.Id); else expandNode(node.Id);
                     render();
                 });
         }
@@ -848,7 +973,6 @@
             // пересекаются по датам) идут своими строками через renderGanttLanes.
             barRow.style('height', `${headerRowHeight}px`);
             const svg = barRow.append('svg').attr('width', timelineWidth).attr('height', headerRowHeight);
-            renderRowBackground(svg, headerRowHeight);
             (collapsedGanttLanes[0] || []).forEach(t => {
                 renderTaskBar(svg, t, {muted: !!t.StatusLabel, rowHeight: headerRowHeight});
             });
@@ -875,32 +999,60 @@
         const query = d3.select('#search').property('value').trim().toLowerCase();
         const assignee = d3.select('#assignee-filter').property('value').trim();
 
+        const filterKey = `${query}\u0000${assignee}`;
+        if (filterKey !== lastFilterKey) {
+            collapsedWhileFiltering.clear();
+            lastFilterKey = filterKey;
+        }
+        autoExpandedIds.clear();
+
+        // сохраняем прокрутку - иначе каждый клик по ▸/▾ или ввод в поиск
+        // отбрасывал таймлайн к началу плана, а список - наверх
+        const timelinePanel = document.getElementById('timeline-panel');
+        const scrollLeft = timelinePanel.scrollLeft;
+        const scrollTop = timelinePanel.scrollTop;
+
         d3.select('#tree-panel').html('');
         d3.select('#timeline-panel').html('');
         renderTreeHeader();
         renderTimelineRuler();
+        const layer = renderNonWorkLayer();
 
         const roots = getRoots();
         const anyVisible = roots.map(r => markVisible(r, query, assignee, false)).some(Boolean);
 
         if (!anyVisible) {
             d3.select('#tree-panel').append('div').attr('class', 'empty-message').text('Ничего не найдено');
-            return;
+        } else {
+            roots.forEach(r => renderRow(r, query, 0));
         }
 
-        roots.forEach(r => renderRow(r, query, 0));
+        fitNonWorkLayer(layer);
+        syncScrollbarSpacer();
+        timelinePanel.scrollLeft = scrollLeft;
+        timelinePanel.scrollTop = scrollTop;
+        document.getElementById('tree-panel').scrollTop = timelinePanel.scrollTop;
     }
 
     function setAllExpanded(value) {
         (function walk(node) {
-            if (value) collapsedIds.delete(node.Id); else if (node.Children.length) collapsedIds.add(node.Id);
+            if (value) expandNode(node.Id); else if (node.Children.length) collapseNode(node.Id);
             node.Children.forEach(walk);
         })({Id: '@root@', Children: getRoots()});
     }
 
+    // Поиск и фильтр перерисовывают всё дерево - не на каждое нажатие
+    // клавиши, а когда ввод на мгновение затих.
+    let renderTimer = null;
+
+    function renderDebounced() {
+        clearTimeout(renderTimer);
+        renderTimer = setTimeout(render, 150);
+    }
+
     /* ===== CONTROLS ===== */
-    d3.select('#search').on('input', render);
-    d3.select('#assignee-filter').on('input', render);
+    d3.select('#search').on('input', renderDebounced);
+    d3.select('#assignee-filter').on('input', renderDebounced);
     d3.select('#expand-all').on('click', () => { setAllExpanded(true); render(); });
     d3.select('#collapse-all').on('click', () => { setAllExpanded(false); render(); });
     d3.select('#clear-filters').on('click', () => {
@@ -915,6 +1067,7 @@
     // кнопка только предлагает быстро туда перескочить, а не делает это сама.
     (function wireTodayButton() {
         if (!todayDate) return;
+        if (todayInRange) d3.select('#legend-today').style('display', null);
         const gapDays = Math.abs((todayDate - minDate) / 86400000);
         if (gapDays <= 14) return;
 
@@ -933,25 +1086,29 @@
     d3.select('#view-resources').classed('active', true);
 
     // синхронизация вертикального скролла между панелями - обе прокручиваются
-    // как одна таблица, хоть и состоят из двух независимых DOM-деревьев;
-    // флаг syncingScroll защищает от бесконечного пинг-понга событий scroll.
+    // как одна таблица, хоть и состоят из двух независимых DOM-деревьев.
+    // Флаг-блокировка тут не работает (событие scroll приходит асинхронно,
+    // уже после сброса флага) - пинг-понга нет потому, что значение
+    // переписывается, только если оно отличается: установка того же
+    // scrollTop события не порождает. Высота прокрутки у панелей одинаковая
+    // благодаря отступу под деревом (см. syncScrollbarSpacer), так что
+    // значения сходятся с первого шага.
     (function wireScrollSync() {
         const treePanel = document.getElementById('tree-panel');
         const timelinePanel = document.getElementById('timeline-panel');
-        let syncingScroll = false;
 
-        treePanel.addEventListener('scroll', () => {
-            if (syncingScroll) return;
-            syncingScroll = true;
-            timelinePanel.scrollTop = treePanel.scrollTop;
-            syncingScroll = false;
-        });
-        timelinePanel.addEventListener('scroll', () => {
-            if (syncingScroll) return;
-            syncingScroll = true;
-            treePanel.scrollTop = timelinePanel.scrollTop;
-            syncingScroll = false;
-        });
+        function mirror(from, to) {
+            from.addEventListener('scroll', () => {
+                if (to.scrollTop !== from.scrollTop) to.scrollTop = from.scrollTop;
+            });
+        }
+
+        mirror(treePanel, timelinePanel);
+        mirror(timelinePanel, treePanel);
+
+        // полоса прокрутки таймлайна может появиться/исчезнуть при смене
+        // ширины окна
+        window.addEventListener('resize', syncScrollbarSpacer);
     })();
 
     render();

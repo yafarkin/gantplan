@@ -1,5 +1,7 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using GantPlan.Dtos;
+using GantPlan.Logic;
 using Newtonsoft.Json;
 
 namespace GantPlan.Visualize;
@@ -11,15 +13,25 @@ namespace GantPlan.Visualize;
 // пересчитывать даты для групп здесь не нужно).
 public static class TaskTreeDataPreparer
 {
+    // d3 лежит рядом с шаблоном и встраивается прямо в HTML - так
+    // timeline.html открывается с диска и без интернета.
+    private const string D3FileName = "d3.v7.9.0.min.js";
+    private const string D3CdnTag = "<script src=\"https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js\"></script>";
+
     public static TreeContext Prepare(ProjectDto project)
     {
         var colors = TaskColorPalette.Build(project.RootTask);
         var root = BuildNode(project, project.RootTask, colors, epicJiraKey: null, epicJiraUrl: null);
 
-        var globalNonWorking = ExpandPeriods(project.GlobalCalendar?.NonWorkingDays);
+        // Нерабочие дни считаются тем же CalendarLogic, что и у солвера
+        // (выходные, праздники, рабочие переносы, личные отпуска и личные
+        // рабочие дни), а не пересчитываются в шаблоне по-своему - иначе
+        // диаграмма расходится с планом: например, штрихует рабочую субботу,
+        // в которую солвер законно поставил работу.
+        var range = PlanRange(project.RootTask);
+        var globalNonWorking = NonWorkingDays(project, range, null);
         var resourceNonWorking = project.Resources
-            .Where(r => r.Calendar is not null)
-            .ToDictionary(ResourceKey, r => ExpandPeriods(r.Calendar!.NonWorkingDays));
+            .ToDictionary(ResourceKey, r => NonWorkingDays(project, range, r.Calendar));
 
         return new TreeContext(root, globalNonWorking, resourceNonWorking, project.FactDate);
     }
@@ -36,19 +48,29 @@ public static class TaskTreeDataPreparer
 
         var template = File.ReadAllText(templatePath, Encoding.UTF8);
 
-        var treeJson = JsonConvert.SerializeObject(
-            context.Root,
-            new JsonSerializerSettings {StringEscapeHandling = StringEscapeHandling.EscapeHtml}
-        );
-        var globalJson = JsonConvert.SerializeObject(context.GlobalNonWorking);
-        var resourceJson = JsonConvert.SerializeObject(context.ResourceNonWorking);
-        var todayJson = JsonConvert.SerializeObject(context.FactDate);
+        // EscapeHtml - для всех данных, не только для дерева: имя задачи или
+        // ресурса с "</script>" иначе разорвало бы встроенный скрипт.
+        var jsonSettings = new JsonSerializerSettings {StringEscapeHandling = StringEscapeHandling.EscapeHtml};
 
-        var output = template
-            .Replace("{{TreeData}}", treeJson)
-            .Replace("{{global_non_working}}", globalJson)
-            .Replace("{{resource_non_working}}", resourceJson)
-            .Replace("{{fact_date}}", todayJson);
+        var d3Path = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(templatePath))!, D3FileName);
+        var d3Script = File.Exists(d3Path)
+            ? "<script>" + File.ReadAllText(d3Path, Encoding.UTF8) + "</script>"
+            : D3CdnTag;
+
+        var values = new Dictionary<string, string>
+        {
+            ["d3_script"] = d3Script,
+            ["TreeData"] = JsonConvert.SerializeObject(context.Root, jsonSettings),
+            ["global_non_working"] = JsonConvert.SerializeObject(context.GlobalNonWorking, jsonSettings),
+            ["resource_non_working"] = JsonConvert.SerializeObject(context.ResourceNonWorking, jsonSettings),
+            ["fact_date"] = JsonConvert.SerializeObject(context.FactDate, jsonSettings)
+        };
+
+        // Один проход по шаблону, а не цепочка Replace: иначе подставленные
+        // данные (например, задача с названием "{{fact_date}}") сами
+        // подменялись бы следующими Replace.
+        var output = Regex.Replace(template, @"\{\{(\w+)\}\}",
+            m => values.TryGetValue(m.Groups[1].Value, out var value) ? value : m.Value);
 
         File.WriteAllText(outputPath, output, Encoding.UTF8);
     }
@@ -111,23 +133,38 @@ public static class TaskTreeDataPreparer
 
     private static string ResourceKey(ResourceDto resource) => $"{resource.Name}-{resource.Role}";
 
-    private static DateOnly[] ExpandPeriods(ICollection<CalendarPeriod>? periods)
+    // Диапазон дат, который покрывает таймлайн: от самого раннего начала до
+    // самого позднего окончания по всему дереву (шаблон строит ось так же).
+    private static (DateOnly From, DateOnly To)? PlanRange(TaskDto root)
     {
-        var result = new List<DateOnly>();
-        if (periods is not null)
+        var dates = new List<DateOnly>();
+
+        void Walk(TaskDto task)
         {
-            foreach (var period in periods)
-            {
-                var day = period.From;
-                while (day <= period.To)
-                {
-                    result.Add(day);
-                    day = day.AddDays(1);
-                }
-            }
+            if (task.Plan?.PlannedStart is { } start) dates.Add(start);
+            if (task.Plan?.PlannedFinish is { } finish) dates.Add(finish);
+            foreach (var child in task.Children) Walk(child);
         }
 
-        return result.ToArray();
+        Walk(root);
+
+        return dates.Count == 0 ? null : (dates.Min(), dates.Max());
+    }
+
+    private static DateOnly[] NonWorkingDays(ProjectDto project, (DateOnly From, DateOnly To)? range, CalendarDto? resourceCalendar)
+    {
+        if (range is not { } r)
+        {
+            return [];
+        }
+
+        var days = r.To.DayNumber - r.From.DayNumber + 1;
+        var calendar = new CalendarLogic(days, r.From, project.GlobalCalendar, resourceCalendar);
+
+        return Enumerable.Range(0, days)
+            .Where(i => !calendar.IsWorkingDay(i))
+            .Select(i => r.From.AddDays(i))
+            .ToArray();
     }
 
     public sealed record TaskNode(
@@ -152,10 +189,14 @@ public static class TaskTreeDataPreparer
 
     public sealed record TreeContext(
         TaskNode Root,
+        // итоговые общие нерабочие дни на диапазоне плана: выходные и
+        // праздники за вычетом рабочих переносов (см. CalendarLogic)
         DateOnly[] GlobalNonWorking,
+        // итоговые нерабочие дни каждого исполнителя (ключ - ResourceKey):
+        // общий календарь плюс личный - отпуска, личные рабочие дни
         Dictionary<string, DateOnly[]> ResourceNonWorking,
-        // Дата среза "на сегодня" (ProjectDto.FactDate) - используется только
-        // для кнопки "на сегодня" в шаблоне; сама временная ось по-прежнему
+        // Дата среза "на сегодня" (ProjectDto.FactDate) - линия "сегодня" и
+        // кнопка "на сегодня" в шаблоне; сама временная ось по-прежнему
         // всегда начинается с начала плана, а не с этой даты.
         DateOnly? FactDate
     );
