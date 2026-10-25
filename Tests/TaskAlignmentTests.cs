@@ -663,6 +663,56 @@ public class TaskAlignmentTests
     }
 
     [Test]
+    public void NonPositiveResourcePercentShouldFailValidationTest()
+    {
+        var project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 1),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "root",
+                Tags = RequiredTags(),
+                Limit = SimpleLimit()
+            },
+            Resources = [new ResourceDto { Role = "dev", Name = "john", Percent = 0 }]
+        };
+
+        var taskAlignment = new TaskAlignment();
+        var ex = Assert.Throws<Exception>(() => taskAlignment.Alignment(project, DefaultWeights));
+
+        Assert.That(ex.Message, Does.Contain("Resource john has invalid Percent 0"));
+    }
+
+    [Test]
+    public void StartAfterLaterThanDueDateShouldFailValidationTest()
+    {
+        var project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 1),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "root",
+                Tags = RequiredTags(),
+                Limit = new TaskLimitDto
+                {
+                    TShirt = TShirtType.S,
+                    ResourceRole = "dev",
+                    StartAfter = new DateOnly(2026, 2, 1),
+                    DueDate = new DateOnly(2026, 1, 20)
+                }
+            },
+            Resources = [DevResource()]
+        };
+
+        var taskAlignment = new TaskAlignment();
+        var ex = Assert.Throws<Exception>(() => taskAlignment.Alignment(project, DefaultWeights));
+
+        Assert.That(ex.Message, Does.Contain("Task 1 has StartAfter 2026-02-01 later than DueDate 2026-01-20"));
+    }
+
+    [Test]
     public void UnknownPredecessorShouldFailValidationTest()
     {
         var project = new ProjectDto

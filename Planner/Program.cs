@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using GantPlan.Dtos;
 using GantPlan.Logic;
 using GantPlan.Visualize;
+using Google.OrTools.Sat;
 using Newtonsoft.Json;
 using Planner.SourcePlans;
 
@@ -27,8 +28,23 @@ else
 }
 
 var s = new Solver();
-if (!s.Solve(project, 30))
+var solved = s.Solve(project, 30);
+
+Console.WriteLine(solved
+    ? $"Solver: {s.Status}, objective {s.ObjectiveValue:F0}, {s.WallTimeSeconds:F1}s"
+    : $"Solver: {s.Status}, {s.WallTimeSeconds:F1}s");
+
+if (s.Status == CpSolverStatus.Feasible)
 {
+    Console.WriteLine("  Оптимальность не доказана за лимит времени - план может отличаться от прогона к прогону.");
+}
+
+if (!solved)
+{
+    Console.WriteLine(s.Status == CpSolverStatus.Infeasible
+        ? "  Ограничения противоречат друг другу: проверьте DueDate/StartAfter, AvailFrom/AvailTo, " +
+          "зависимости и уже начатые задачи (их старт и исполнитель зафиксированы)."
+        : "  За лимит времени не найдено ни одного плана - увеличьте лимит или упростите модель.");
     // Останавливаемся здесь, а не проваливаемся дальше: project - тот же
     // (непроверенный/неполный) объект, каким был до Solve, перезаписывать
     // им уже существующий валидный project.json нечем, а генерировать

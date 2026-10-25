@@ -49,6 +49,14 @@ public static class ProjectValidator
     {
         foreach (var resource in resources)
         {
+            // Длительность делится на Percent (см. Solver.CalcTaskLimitDuration):
+            // 0 роняет прогон OverflowException'ом, отрицательный тихо даёт
+            // бессмысленную 1-дневную длительность.
+            if (resource.Percent <= 0)
+            {
+                errors.Add($"Resource {resource.Name} has invalid Percent {resource.Percent}, must be greater than 0");
+            }
+
             if (resource.Calendar is null)
             {
                 continue;
@@ -118,6 +126,13 @@ public static class ProjectValidator
         if (!task.CanSkipTask && !ResourceResolves(task.Limit, resources))
         {
             errors.Add($"Can't find resource for task {task.Id}");
+        }
+
+        // Иначе модель заведомо невыполнима, а солвер сообщит об этом лишь
+        // общим Infeasible, без указания на задачу.
+        if (!task.CanSkipTask && task.Limit.StartAfter > task.Limit.DueDate)
+        {
+            errors.Add($"Task {task.Id} has StartAfter {task.Limit.StartAfter:yyyy-MM-dd} later than DueDate {task.Limit.DueDate:yyyy-MM-dd}");
         }
 
         foreach (var predecessorId in task.Limit.PredecessorIds)
