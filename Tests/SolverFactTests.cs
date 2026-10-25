@@ -609,4 +609,33 @@ public sealed class SolverFactTests
         },
         Resources = [new ResourceDto { Role = "dev", Name = "john" }]
     };
+
+    // Закрытие без ResourceName, в лимитах только роль: если человек этой
+    // роли один, закрывал он - граница истории ставится как обычно.
+    [Test]
+    public void ClosureWithoutResourceShouldBeAttributedToTheOnlyResourceOfRoleTest()
+    {
+        _project = HistoryProject(startAfter: null);
+        Task("old").Fact!.Records[0].ResourceName = null;
+
+        Assert.IsTrue(_solver.Solve(_project));
+
+        Assert.That(Task("new").Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 1, 16)));
+        Assert.That(_solver.Warnings, Is.Empty);
+    }
+
+    // Людей этой роли двое, и кто закрывал - неизвестно: граница истории не
+    // ставится (чья она - непонятно), а в Warnings - подсказка, что указать.
+    [Test]
+    public void ClosureWithUnknownResourceShouldBeReportedTest()
+    {
+        _project = HistoryProject(startAfter: null);
+        Task("old").Fact!.Records[0].ResourceName = null;
+        _project.Resources.Add(new ResourceDto { Role = "dev", Name = "jane" });
+
+        Assert.IsTrue(_solver.Solve(_project));
+
+        Assert.That(_solver.Warnings, Has.Count.EqualTo(1));
+        Assert.That(_solver.Warnings[0], Does.Contain("Задача old закрыта, но неизвестно, кем"));
+    }
 }

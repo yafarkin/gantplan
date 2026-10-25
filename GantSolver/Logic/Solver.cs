@@ -67,7 +67,12 @@ public sealed class Solver
     // FactDate в днях от ProjectStart; null - даты среза нет.
     private int? _factOffset;
 
+    // Предупреждения о входных данных (копятся при подготовке) и о
+    // DueDate (пересчитываются при каждой перестройке модели, см.
+    // CreateDependencyBetweenTasks) - отдельно, чтобы перестройка при
+    // нехватке горизонта не теряла первые и не дублировала вторые.
     private readonly List<string> _warnings = new();
+    private readonly List<string> _dueDateWarnings = new();
     private readonly List<TaskDto> _awaitingClosure = new();
 
     // См. BuildGreedyPlan.
@@ -97,7 +102,7 @@ public sealed class Solver
 
     // Предупреждения о том, что в план заложить не удалось (например,
     // недостижимый DueDate) - решение при этом найдено.
-    public IReadOnlyList<string> Warnings => _warnings;
+    public IReadOnlyList<string> Warnings => [.._warnings, .._dueDateWarnings];
 
     // Задачи, которые по плану уже должны были закончиться, но их закрытие
     // не подтверждено (см. TaskPlanDto.AwaitingClosure).
@@ -108,6 +113,7 @@ public sealed class Solver
         _project = project;
         TieBreakStatus = null;
         _warnings.Clear();
+        _dueDateWarnings.Clear();
         _awaitingClosure.Clear();
 
         // Авто-записи прошлого прогона (если план уже решали) - не факт, а
@@ -223,8 +229,15 @@ public sealed class Solver
         foreach (var task in _taskAlignment.OriginalTasks.Values.Where(t => !t.HasChild))
         {
             var completed = task.Fact?.Records.LastOrDefault(r => r.Type == TaskFactRecordType.Completed);
-            if (completed is null || FindCompletedBy(task) is not { } resource)
+            if (completed is null)
             {
+                continue;
+            }
+
+            if (FindCompletedBy(task) is not { } resource)
+            {
+                _warnings.Add($"Задача {task.Id} закрыта, но неизвестно, кем: граница истории исполнителя " +
+                              "не учтена - укажите ResourceName в записи Completed");
                 continue;
             }
 
@@ -235,6 +248,8 @@ public sealed class Solver
 
     // Кто делал закрытую задачу: из записи о закрытии, иначе из последней
     // записи с исполнителем, иначе из лимитов или заданного руками Plan.
+    // Если имени нигде нет, но в лимитах роль, и человек этой роли в
+    // проекте один - значит, он. null - определить нельзя.
     private ResourceDto? FindCompletedBy(TaskDto task)
     {
         var name = task.Fact?.Records.LastOrDefault(r => r.Type == TaskFactRecordType.Completed)?.ResourceName
@@ -242,7 +257,13 @@ public sealed class Solver
                    ?? task.Limit?.ResourceName
                    ?? task.Plan?.ResourceName;
 
-        return _project.Resources.FirstOrDefault(r => r.Name == name);
+        if (name is not null)
+        {
+            return _project.Resources.FirstOrDefault(r => r.Name == name);
+        }
+
+        var byRole = _project.Resources.Where(r => r.Role == task.Limit?.ResourceRole).ToList();
+        return byRole.Count == 1 ? byRole[0] : null;
     }
 
     // Уже начатая задача: старт - дата последней ручной записи прогресса
@@ -887,7 +908,7 @@ public sealed class Solver
     // также должна укладываться в DueDate/StartAfter, если они заданы.
     private void CreateDependencyBetweenTasks()
     {
-        _warnings.Clear();
+        _dueDateWarnings.Clear();
 
         foreach (var (taskKey, task) in _taskAlignment.FlattenTasksToSolve)
         {
@@ -952,7 +973,7 @@ public sealed class Solver
 
         if (earliestEnd > endLimit)
         {
-            _warnings.Add($"Задача {taskKey}: DueDate {dueDate:dd.MM.yyyy} уже не достижим " +
+            _dueDateWarnings.Add($"Задача {taskKey}: DueDate {dueDate:dd.MM.yyyy} уже не достижим " +
                           $"(закончится не раньше {ToDate(earliestEnd.Value - 1):dd.MM.yyyy}) - ограничение пропущено");
             return;
         }
