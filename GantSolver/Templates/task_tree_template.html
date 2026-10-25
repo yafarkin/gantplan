@@ -496,7 +496,7 @@
                     Id: `@resource@${name}`,
                     Name: name,
                     JiraKey: null, JiraUrl: null, EpicJiraKey: null, EpicJiraUrl: null, Assignee: null,
-                    Start: null, End: null, StatusLabel: null,
+                    Start: null, End: null, StatusLabel: null, Muted: false,
                     // у заголовка ресурса нет своего бара (внутри него
                     // рисуются бары настоящих задач со своими цветами)
                     Color: null,
@@ -863,7 +863,7 @@
                 .on('mouseleave', () => setRowHover(laneIdx, false));
             const svg = laneRow.append('svg').attr('width', timelineWidth).attr('height', LANE_ROW_HEIGHT);
             lane.forEach(t => {
-                renderTaskBar(svg, t, {muted: !!t.StatusLabel, rowHeight: LANE_ROW_HEIGHT});
+                renderTaskBar(svg, t, {muted: t.Muted, rowHeight: LANE_ROW_HEIGHT});
             });
         });
     }
@@ -890,7 +890,7 @@
         if (!node._visible) return;
 
         const idx = rowIndex++;
-        const rowClass = 'tree-row' + (idx % 2 === 1 ? ' stripe' : '') + (node.StatusLabel ? ' muted' : '');
+        const rowClass = 'tree-row' + (idx % 2 === 1 ? ' stripe' : '') + (node.Muted ? ' muted' : '');
 
         const collapsedGanttLanes = (node._isGroupHeader && !isExpanded(node))
             ? packLanes(collectLeaves(node).filter(n => n._visible).sort((a, b) => a._start - b._start))
@@ -974,7 +974,7 @@
             barRow.style('height', `${headerRowHeight}px`);
             const svg = barRow.append('svg').attr('width', timelineWidth).attr('height', headerRowHeight);
             (collapsedGanttLanes[0] || []).forEach(t => {
-                renderTaskBar(svg, t, {muted: !!t.StatusLabel, rowHeight: headerRowHeight});
+                renderTaskBar(svg, t, {muted: t.Muted, rowHeight: headerRowHeight});
             });
         } else {
             renderBarCell(barRow, node);

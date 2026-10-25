@@ -151,7 +151,6 @@ public sealed class SolverTests
         Assert.IsTrue(solved);
 
         var expectedResource1 = _project.Resources.First().Name;
-        var expectedResource1Confidence = _project.Resources.First().Confidence;
         var expectedResource2 = _project.Resources.Last().Name;
 
         var tasks = _project.RootTask.Children.ToList();
@@ -159,32 +158,18 @@ public sealed class SolverTests
         Assert.That(tasks[0].Plan!.ResourceName, Is.EqualTo(expectedResource1));
         Assert.That(tasks[0].Plan!.PlannedStart, Is.EqualTo(new  DateOnly(2026, 01, 15)));
         Assert.That(tasks[0].Plan!.PlannedFinish, Is.EqualTo(new  DateOnly(2026, 01, 23)));
-        Assert.IsNotNull(tasks[0].Fact);
-        Assert.That(tasks[0].Fact.IsProgress, Is.True);
-        Assert.That(tasks[0].Fact.IsFinished, Is.False);
-        Assert.That(tasks[0].Fact.StartDate, Is.EqualTo(tasks[0].Plan!.PlannedStart));
-        Assert.That(tasks[0].Fact.FinishDate, Is.Null);
-        Assert.That(tasks[0].Fact.Records.Count, Is.EqualTo(1));
-        Assert.That(tasks[0].Fact.Records[0].RecordedAt, Is.EqualTo(tasks[0].Plan!.PlannedStart));
-        Assert.That(tasks[0].Fact.Records[0].Duration, Is.EqualTo(tasks[0].Limit!.TShirt!.Value.ToDays(expectedResource1Confidence)));
-        Assert.That(tasks[0].Fact.Records[0].ResourceName, Is.EqualTo(expectedResource1));
-        Assert.That(tasks[0].Fact.Records[0].Type, Is.EqualTo(TaskFactRecordType.Started));
+        // без FactDate солвер факт не трогает: ни старт, ни прогресс не
+        // дописываются (раньше задачам "в будущем" ставился Started).
+        Assert.That(tasks[0].Fact, Is.Null);
         
         Assert.That(tasks[1].Plan!.ResourceName, Is.EqualTo(expectedResource1));
         // task1 заканчивается в пятницу 23.01 - следующая начинается не в
         // субботу 24.01, а в понедельник 26.01 (старт в нерабочий день запрещён).
         Assert.That(tasks[1].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 26)));
         Assert.That(tasks[1].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 28)));
-        Assert.IsNotNull(tasks[1].Fact);
-        Assert.That(tasks[1].Fact.IsProgress, Is.True);
-        Assert.That(tasks[1].Fact.IsFinished, Is.False);
-        Assert.That(tasks[1].Fact.StartDate, Is.EqualTo(tasks[1].Plan!.PlannedStart));
-        Assert.That(tasks[1].Fact.FinishDate, Is.Null);
-        Assert.That(tasks[1].Fact.Records.Count, Is.EqualTo(1));
-        Assert.That(tasks[1].Fact.Records[0].RecordedAt, Is.EqualTo(tasks[1].Plan!.PlannedStart));
-        Assert.That(tasks[1].Fact.Records[0].Duration, Is.EqualTo(tasks[1].Limit!.TShirt!.Value.ToDays(expectedResource1Confidence)));
-        Assert.That(tasks[1].Fact.Records[0].ResourceName, Is.EqualTo(expectedResource1));
-        Assert.That(tasks[1].Fact.Records[0].Type, Is.EqualTo(TaskFactRecordType.Started));
+        // без FactDate солвер факт не трогает: ни старт, ни прогресс не
+        // дописываются (раньше задачам "в будущем" ставился Started).
+        Assert.That(tasks[1].Fact, Is.Null);
         
         Assert.That(tasks[2].Plan!.ResourceName, Is.EqualTo(expectedResource2));
         Assert.That(tasks[2].Plan!.PlannedStart, Is.EqualTo(new DateOnly(2026, 01, 1)));
@@ -249,6 +234,31 @@ public sealed class SolverTests
         Assert.That(tasks[1].Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 01, 5)));
     }
     
+
+    // DueDate включительно (как и AvailTo): задача может закончиться в сам
+    // день срока. 5 рабочих дней с понедельника 05.01 - ровно до пятницы
+    // 09.01 = DueDate; раньше срок считался исключающим, и такая модель
+    // была невыполнимой.
+    [Test]
+    public void TaskMayFinishOnDueDateItselfTest()
+    {
+        _project = new ProjectDto
+        {
+            ProjectStart = new DateOnly(2026, 1, 5),
+            RootTask = new TaskDto
+            {
+                Id = "1",
+                Name = "root",
+                Tags = new Dictionary<string, string> { [TaskTagKeys.IsOkr] = "false" },
+                Limit = new TaskLimitDto { Duration = 5, ResourceRole = "dev", DueDate = new DateOnly(2026, 1, 9) }
+            },
+            Resources = [new ResourceDto { Role = "dev", Name = "john" }]
+        };
+
+        Assert.IsTrue(_solver.Solve(_project));
+        Assert.That(_project.RootTask.Plan!.PlannedFinish, Is.EqualTo(new DateOnly(2026, 1, 9)));
+        Assert.That(_solver.Warnings, Is.Empty);
+    }
 
     [Test]
     public void StartAfterTest()

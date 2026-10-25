@@ -103,8 +103,13 @@ public static class TaskTreeDataPreparer
             {Disabled: true} => "выключено",
             {Fact.IsPaused: true} => "на паузе",
             {Fact.IsFinished: true} => "завершено",
+            {Plan.AwaitingClosure: true} => "ждёт подтверждения закрытия",
             _ => null
         };
+
+        // приглушаются только задачи, которые уже не в работе; "ждёт
+        // подтверждения закрытия" - наоборот, требует внимания
+        var muted = task.Disabled || task.Fact?.IsPaused == true || task.Fact?.IsFinished == true;
 
         // Для детей "ближайший предок с Jira-ключом" - это сама задача, если
         // у неё есть свой JiraKey, иначе то, что пришло сверху (пробрасываем
@@ -127,6 +132,7 @@ public static class TaskTreeDataPreparer
             task.Plan?.PlannedStart,
             task.Plan?.PlannedFinish,
             statusLabel,
+            muted,
             colors.TryGetValue(task, out var color) ? color : TaskColorPalette.StructuralColor,
             children);
     }
@@ -181,6 +187,8 @@ public static class TaskTreeDataPreparer
         DateOnly? Start,
         DateOnly? End,
         string? StatusLabel,
+        // приглушить строку и бар (выключена, на паузе, завершена)
+        bool Muted,
         // цвет бара (hex): у эпика - его собственный цвет, у задач внутри
         // эпика - оттенки того же цвета (см. TaskColorPalette)
         string Color,

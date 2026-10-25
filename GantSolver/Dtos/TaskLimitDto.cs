@@ -49,7 +49,7 @@ public sealed record TaskLimitDto
     public ICollection<string> PredecessorIds { get; set; } = [];
     
     /// <summary>
-    /// (Optional) Due date for task.
+    /// (Optional) Due date for task - the last day the task may still be worked on (inclusive).
     /// </summary>
     public DateOnly? DueDate { get; set; }
     

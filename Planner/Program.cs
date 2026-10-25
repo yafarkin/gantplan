@@ -60,6 +60,24 @@ if (!solved)
     return 1;
 }
 
+foreach (var warning in s.Warnings)
+{
+    Console.WriteLine($"  ! {warning}");
+}
+
+// Закрытие задач подтверждается только вручную (запись Completed в Fact) -
+// пока его нет, задача считается несделанной и держит исполнителя и
+// последователей (см. Solver.CalcTaskEnd).
+if (s.AwaitingClosure.Count > 0)
+{
+    Console.WriteLine($"Ждут подтверждения закрытия на {project.FactDate:dd.MM.yyyy} ({s.AwaitingClosure.Count}):");
+    foreach (var task in s.AwaitingClosure)
+    {
+        var key = string.IsNullOrWhiteSpace(task.JiraKey) ? task.Id : task.JiraKey;
+        Console.WriteLine($"  {key,-12} {task.Name} ({task.Plan!.ResourceName})");
+    }
+}
+
 // Берём календарный квартал, в который попадает начало плана.
 var (qs, qe) = CalendarQuarter.Containing(project.ProjectStart);
 

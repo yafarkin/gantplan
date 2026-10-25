@@ -13,12 +13,11 @@ public static class DemoProject
             // DEMO-050 - иначе на диаграмме перед DEMO-050 висел бы пустой
             // отрезок времени без единой задачи.
             ProjectStart = new DateOnly(2025, 11, 24),
-            // Дата среза "на сегодня" - без неё Solver.PostFillAfterSolve не
-            // сможет сам разметить факт (см. FactDateShouldAutoFillCompletedAndInProgressTest),
-            // а Solver.CreateDependencyBetweenTasks не включит защиту от
-            // бэкдейтинга новых задач в дыру, оставленную уже выполненной
-            // DEMO-050 (см. hasAlreadyCompletedWork) - без FactDate это не
-            // синтетический пример, а баг во входных данных. Дата - не
+            // Дата среза "на сегодня" - по ней солвер сам отмечает прогресс
+            // (старт по плану и остаток, записи IsAuto), а задачи, которые
+            // по плану уже должны были закончиться без подтверждённого
+            // закрытия, помечает "ждёт подтверждения закрытия" (см.
+            // FactDateShouldAutoStartButRequireClosureConfirmationTest). Дата - не
             // раньше самой поздней Fact-отметки в DEMO-075 (иначе
             // получилось бы "сегодня раньше, чем последняя отметка о
             // прогрессе", что бессмысленно).
@@ -161,7 +160,7 @@ public static class DemoProject
                     // работает по-настоящему: солвер запрещает менять
                     // исполнителя уже начатой задаче (см.
                     // Solver.FindResourcesForTask) и жёстко фиксирует старт
-                    // остатка датой этой записи (см. Solver.CalcFixedStart).
+                    // остатка датой этой записи (см. Solver.PrepareFixedTasks).
                     // Дата записи стоит практически сразу после освобождения
                     // от DEMO-050 - если оставить между ними большой зазор,
                     // солвер вставит туда DEMO-100 (см. ниже), а не заставит
@@ -438,10 +437,9 @@ public static class DemoProject
             Resources = new List<ResourceDto>
             {
                 // Занятость developer 1/3 и qa 1 на DEMO-050 отдельным
-                // AvailFrom больше не проставляем - её теперь закрывает
-                // общий флор в Solver.CreateDependencyBetweenTasks (свежая
-                // задача не может стартовать раньше FactDate, если в проекте
-                // уже есть что-то Completed - см. hasAlreadyCompletedWork).
+                // AvailFrom не проставляем - её закрывает граница истории
+                // исполнителя: до его последнего подтверждённого закрытия
+                // ничего неначатого ему не ставится (см. Solver.CalcHistoryEnd).
                 new()
                 {
                     Name = "developer 1",

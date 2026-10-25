@@ -119,6 +119,26 @@ public sealed class CalendarLogic
         return i;
     }
 
+    // Обратная к CalcEndOffset: день старта задачи из workingDays рабочих
+    // дней, последний из которых - lastDay (включительно). Нужна, чтобы
+    // восстановить даты закрытой задачи, у которой известен только день
+    // закрытия.
+    public int CalcStartOffset(int lastDay, int workingDays)
+    {
+        var i = Math.Min(lastDay, _days.Length - 1);
+        var remaining = Math.Max(1, workingDays);
+
+        while (true)
+        {
+            if (IsWorkingDay(i) && --remaining == 0)
+            {
+                return i;
+            }
+
+            i--;
+        }
+    }
+
     public int CalcWorkingDaysCount(DateOnly start, DateOnly end)
     {
         if (start < _startDate || end >= _startDate.AddDays(_days.Length))
