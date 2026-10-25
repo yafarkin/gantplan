@@ -37,7 +37,7 @@ public class CalendarLogicTests
     // На уровне персонального календаря пересечение периодов - это уже
     // ошибка данных (см. ProjectValidator.ValidateResourceCalendars и
     // OverlappingResourceCalendarPeriodsShouldFailValidationTest в
-    // TaskAlignmentTests) - её ловят и отклоняют ДО того, как дело доходит
+    // ProjectValidatorTests) - её ловят и отклоняют ДО того, как дело доходит
     // до CalendarLogic. Но сам CalendarLogic - чисто механический класс, он
     // не знает о существовании валидатора и не должен падать вообще ни на
     // каких входных периодах (например, если его когда-нибудь вызовут не

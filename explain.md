@@ -19,8 +19,14 @@ constraint-programming модель через Google OR-Tools (CP-SAT).
   (либо берёт демо-проект из `SourcePlans/DemoProject.cs`), прогоняет солвер,
   сохраняет результат обратно в `project.json` и генерирует `timeline.html`
   (открывает его в Finder/проводнике).
-- **Tests** — юнит-тесты солвера (SolverTests, TaskAlignmentTests, SmokeTests,
-  NoTasksTests, ExtensionTests).
+- **Tests** — юнит-тесты (NUnit), по темам: солвер (SolverTests — базовое
+  планирование, SolverCalendarTests — календари, SolverFactTests — план/факт),
+  разворот дерева (TaskAlignmentTests), валидация (ProjectValidatorTests),
+  календарь, отчёты и таймлайн.
+
+Общие настройки сборки — в `Directory.Build.props` (в т.ч.
+`TreatWarningsAsErrors`: любое предупреждение компилятора ломает сборку),
+стиль кода — в `.editorconfig`.
 
 ## Доменная модель (GantSolver/Dtos)
 - `ProjectDto` — дата старта проекта, дата среза "на сегодня" (`FactDate`),

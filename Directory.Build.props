@@ -1,0 +1,17 @@
+<Project>
+
+    <!-- Общие настройки всех проектов решения. -->
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <!-- Предупреждение компилятора - это ошибка: иначе они копятся
+             незаметно (как CS8618 в тестах). Аудит уязвимостей NuGet
+             (NU1901-NU1904) - исключение: он зависит не от нашего кода, а
+             от свежих бюллетеней, и не должен внезапно ронять сборку в CI. -->
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
+    </PropertyGroup>
+
+</Project>

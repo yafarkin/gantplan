@@ -5,8 +5,8 @@ namespace Tests;
 
 public sealed class NoTasksTests
 {
-    private ProjectDto _project;
-    private Solver _solver;
+    private ProjectDto _project = null!;
+    private Solver _solver = null!;
     
     [SetUp]
     public void Setup()

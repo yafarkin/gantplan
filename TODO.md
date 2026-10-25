@@ -93,9 +93,13 @@
 
 ## Низкий приоритет / чисто гигиена — по желанию
 
-10. Нет `.editorconfig`, нет `TreatWarningsAsErrors`/`Directory.Build.props`
+10. ✅ Сделано: `.editorconfig`, `Directory.Build.props` с
+    `TreatWarningsAsErrors`, предупреждения в тестах исправлены. Было:
+    нет `.editorconfig`, нет `TreatWarningsAsErrors`/`Directory.Build.props`
     (только `Nullable enable`, дальше ничего не форсируется).
-11. `SolverTests.cs` (835 строк) и `TaskAlignmentTests.cs` (684 строки) уже
+11. ✅ Сделано: тесты солвера разбиты на SolverTests/SolverCalendarTests/
+    SolverFactTests, валидация вынесена в ProjectValidatorTests. Было:
+    `SolverTests.cs` (835 строк) и `TaskAlignmentTests.cs` (684 строки) уже
     большие, без `[Category]` — не срочно, но при дальнейшем росте стоит
     разбить по темам.
 12. ✅ Сделано. Остатки закомментированного кода/альтернативных реализаций в
